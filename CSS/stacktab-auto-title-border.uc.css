@@ -1,0 +1,20 @@
+/* ==UserScript==
+// @description Gives auto-titled stacks (from stacktab-auto-title.uc.js) a border in the theme's text colour.
+// @long-description
+*/
+
+@charset "UTF-8";
+@-moz-document url(chrome://browser/content/browser.xhtml) {
+	/* uc-auto-title is set by stacktab-auto-title.uc.js on unnamed stacks.
+	   The border is the tab text colour faded out, so it reads light on dark
+	   themes and dark on light ones. Like Floorp's own chip border, it's
+	   stronger on the stack holding the selected tab. Raise or lower the
+	   percentages to taste. The drop-into highlight still wins while
+	   dragging onto a stack. */
+	#tabbrowser-tabs tab-group[data-floorp-stack]:not([data-floorp-drop-into]) .tab-group-label[uc-auto-title] {
+	  border-color: color-mix(in srgb, currentColor 35%, transparent) !important;
+	}
+	#tabbrowser-tabs tab-group[data-floorp-stack][hasactivetab]:not([data-floorp-drop-into]) .tab-group-label[uc-auto-title] {
+	  border-color: color-mix(in srgb, currentColor 60%, transparent) !important;
+	}
+}
