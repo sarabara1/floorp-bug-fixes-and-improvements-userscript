@@ -42,6 +42,13 @@
 // capture listener that turns any chip click into "activate this stack" and
 // the proxy's own click-to-select.
 //
+// Loading: Floorp's stack tabs only ever show the favicon. While the real
+// tab is `busy`, a `.uc-stack-throbber` box beside the favicon in the
+// iconbox takes its place and plays Firefox's tab throbber (the same sprite,
+// timing, `progress` colour and reduced-motion fallback as tabs.css). The
+// stack bar sits outside #TabsToolbar, so the bright-text colour keys off
+// #TabsToolbar[brighttext] anywhere in the window.
+//
 // Close button: Floorp's stack tabs and chips swap their icon for a close
 // button on hover. Here it sits at the right end instead and the icon stays,
 // so it never collides with the audio button. On stack tabs, Floorp's
@@ -63,7 +70,8 @@
   const COLOR_CLASS_RE = /^identity-color-/;
   const AUDIO_BTN = "uc-stack-audio-button";
   const AUDIO_ATTRS = ["soundplaying", "soundplaying-scheduledremoval", "muted", "activemedia-blocked"];
-  const SYNC_ATTRS = [...AUDIO_ATTRS, "crashed"];
+  const SYNC_ATTRS = [...AUDIO_ATTRS, "crashed", "busy", "progress"];
+  const THROBBER_CLASS = "uc-stack-throbber";
 
   // Theme custom properties that position the button and title, and the
   // element of a real tab they're set on.
@@ -183,6 +191,71 @@
       padding-inline-end: 24px !important;
     }
 
+    /* ---- Loading throbber ---- */
+    .floorp-stack-tab-iconbox > .${THROBBER_CLASS} {
+      position: relative;
+      width: 16px;
+      height: 16px;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    /* After the hover rule above, which it overrides while loading. */
+    .floorp-stack-tab[uc-busy] > .floorp-stack-tab-iconbox > .floorp-stack-tab-icon,
+    .floorp-stack-tab-iconbox > .${THROBBER_CLASS}:not([busy]) {
+      display: none !important;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .floorp-stack-tab-iconbox > .${THROBBER_CLASS} {
+        background-image: url("chrome://global/skin/icons/loading.svg");
+        background-position: center;
+        background-repeat: no-repeat;
+        -moz-context-properties: fill;
+        fill: currentColor;
+        opacity: 0.4;
+      }
+      .floorp-stack-tab-iconbox > .${THROBBER_CLASS}[progress] {
+        opacity: 0.8;
+      }
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      :root[sessionrestored] .floorp-stack-tab-iconbox > .${THROBBER_CLASS}[busy]::before {
+        content: "";
+        position: absolute;
+        background-image: url("chrome://browser/skin/tabbrowser/loading.svg");
+        background-position: left center;
+        background-repeat: no-repeat;
+        width: 480px;
+        height: 100%;
+        animation: uc-stack-tab-throbber 1.05s steps(30) infinite;
+        -moz-context-properties: fill;
+        fill: currentColor;
+        opacity: 0.7;
+      }
+      :root[sessionrestored] .floorp-stack-tab-iconbox > .${THROBBER_CLASS}[busy]:-moz-locale-dir(rtl)::before {
+        animation-name: uc-stack-tab-throbber-rtl;
+      }
+      :root[sessionrestored] .floorp-stack-tab-iconbox > .${THROBBER_CLASS}[progress]::before {
+        fill: var(--tab-loading-fill);
+        opacity: 1;
+      }
+      :root[sessionrestored]:has(#TabsToolbar[brighttext])
+        .floorp-stack-tab:not([data-selected="true"]) > .floorp-stack-tab-iconbox > .${THROBBER_CLASS}[progress]::before {
+        fill: #84c1ff;
+      }
+    }
+
+    @keyframes uc-stack-tab-throbber {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-100%); }
+    }
+    @keyframes uc-stack-tab-throbber-rtl {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(100%); }
+    }
+
     /* Global tabs keep the arrow cursor; Floorp gives the chip a pointer. */
     tab-group[${STACK_ATTR}] .tab-group-label,
     tab-group[${STACK_ATTR}] .tab-group-label > .floorp-stack-close {
@@ -283,6 +356,25 @@
       btn => iconbox ? iconbox.after(btn) : proxy.prepend(btn));
   }
 
+  // Created the first time the tab loads and hidden when idle after that.
+  function syncProxyThrobber(proxy, tab) {
+    const iconbox = proxy.querySelector(":scope > .floorp-stack-tab-iconbox");
+    if (!iconbox) return;
+    const busy = !!tab?.hasAttribute("busy");
+    let throbber = iconbox.querySelector(`:scope > .${THROBBER_CLASS}`);
+    if (!throbber) {
+      if (!busy) return;
+      throbber = document.createXULElement("hbox");
+      throbber.classList.add(THROBBER_CLASS);
+      const icon = iconbox.querySelector(":scope > .floorp-stack-tab-icon");
+      if (icon) icon.after(throbber);
+      else iconbox.prepend(throbber);
+    }
+    setAttr(throbber, "busy", busy ? "true" : null);
+    setAttr(throbber, "progress", tab?.hasAttribute("progress") ? "true" : null);
+    setAttr(proxy, "uc-busy", busy ? "true" : null);
+  }
+
   function syncChipAudio(group) {
     const label = group.querySelector(".tab-group-label");
     if (!label) return;
@@ -301,6 +393,7 @@
       const tab = tabsById.get(tabIdOf(proxy)) ?? null;
       syncContainer(proxy, tab);
       syncProxyAudio(proxy, tab);
+      syncProxyThrobber(proxy, tab);
     }
     for (const group of gBrowser.tabGroups) syncChipAudio(group);
   }
@@ -498,7 +591,7 @@
       document.getElementById("navigator-toolbox"),
       { childList: true, subtree: true }
     );
-    // Audio state lives in tab attributes.
+    // Audio and loading state live in tab attributes.
     gBrowser.tabContainer.addEventListener("TabAttrModified", (e) => {
       if (e.detail?.changed?.some(a => SYNC_ATTRS.includes(a))) scheduleSync();
     });
