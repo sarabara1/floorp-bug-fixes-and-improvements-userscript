@@ -49,6 +49,8 @@ The tab stack implementation leaves a lot to be desired. They're clunky and frus
 
 **stackktab-compact-stacks.uc.css** - Makes stacks a bit more compact, between the width of a group and normal tab. Great if you like to have a bunch of assorted stacks.
 
+**stacktab-auto-title-border.uc.css** - Gives auto-titled stacks (from stacktab-auto-title.uc.js) a white or black border to differentiate them from named stacks.
+
 # Installation
 
 Install fx-autoconfig https://github.com/MrOtherGuy/fx-autoconfig then copy the JS folder and optionally userChrome.css to your profile -> chrome folder (you'll know where it is after installing fx-autoconfig). Delete unwanted scripts as you wish.
