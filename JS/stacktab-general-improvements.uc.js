@@ -58,11 +58,15 @@
 // arrow cursor, like a global tab, instead of Floorp's pointer.
 //
 // Active tab: clicking a stack opens the tab last viewed in it, including
-// after a restart (see onChipClick), and closing a tab next to a stack
-// switches to that same tab rather than the stack's nearest member.
+// after a restart (see onChipClick), and closing a tab that has to leave its
+// stack or group for another one switches to that same last-viewed tab
+// rather than the other stack's or group's nearest member.
 //
-// Closing a tab switches to the nearest loaded tab, inside a stack or out,
-// rather than one that has to load first (see refreshSuccessor).
+// Closing a tab never leaves its stack, group or the global tabs unless it
+// was the only tab there: it switches to the nearest loaded tab to the left,
+// else the tab to the right, else the tab to the left. Unloading the
+// selected tab follows the same rules among loaded tabs (see
+// refreshSuccessor).
 
 (function () {
   const PROXY_SEL = ".floorp-stack-tab";
@@ -169,6 +173,15 @@
 
     :root[floorp-hover-reload] .floorp-stack-tab:hover > .floorp-stack-tab-label {
       margin-inline-end: 32px !important;
+    }
+
+    /* The stack bar sizes to its tabs' content widths (capped at their
+       max-width), so the hover margin above would widen the bar whenever a
+       short-titled tab is hovered, nudging every tab. A preferred width
+       equal to Floorp's flex-basis makes each tab count the same whatever
+       its content; flexing still shrinks them when space is short. */
+    .floorp-stack-tab {
+      width: 180px;
     }
 
     /* Chip: Floorp positions its close button absolutely inside the label,
@@ -472,19 +485,27 @@
   // Closing the selected tab selects its successor if it has one, else
   // (tabbrowser _findTabToBlurTo) its opener, or the MRU tab when
   // browser.tabs.selectMRUOnClose is set, or the next visible tab in tab
-  // order, else the previous. The successor is set so closing a tab prefers
-  // the nearest *loaded* tab, instead of dropping you on one that has to
-  // load first (next wins a tie):
-  //   • Inside a stack, Floorp makes the successor the tab's neighbour in the
-  //     stack (next, else previous). It becomes the nearest loaded member,
-  //     falling back to the plain neighbour when no other member is loaded.
-  //   • Outside a stack, it's the nearest loaded tab in tab order, where each
-  //     stack counts as one tab: its active tab. A stack's members are
-  //     consecutive in tab order, so without that a global tab beside a
-  //     stack would fall to the stack's first or last member.
-  //     With no loaded tab around, Firefox's tab order rule applies, still
-  //     with a stack standing for its active tab. The opener and MRU rules
-  //     are left to Firefox.
+  // order, else the previous. The successor is set so closing a tab never
+  // leaves its container — its stack or group, the pinned tabs, or the other
+  // global tabs — unless it's the only tab there:
+  //   1. The nearest loaded tab to its left in the container.
+  //   2. The tab to its right in the container: the one that takes its place.
+  //   3. The tab to its left in the container.
+  //   4. The nearest loaded tab outside the container in tab order (left
+  //      wins a tie), where every other stack or group counts as one tab: its
+  //      active tab, the one you last viewed there. Its members are
+  //      consecutive in tab order, so without that you'd land on whichever
+  //      member happens to sit at its edge.
+  //   5. The nearest tab outside the container, loaded or not.
+  // Tabs in collapsed groups aren't visible, so they're skipped. For tabs
+  // outside stacks, the opener and MRU rules are left to Firefox.
+  //
+  // Firefox skips the successor when it's among the tabs it was told to
+  // avoid: the other tabs being closed together, or, when unloading the
+  // selected tab, every tab that isn't loaded. For those calls the same rules
+  // are applied without the avoided tabs (see hookFindTabToBlurTo), so unloading
+  // stays in the container when anything loaded is left there.
+  //
   // Other successors are left alone — any set by someone else, apart from
   // Floorp's in-stack neighbour. Ours are tracked so they can be told apart
   // and cleared.
@@ -493,57 +514,75 @@
   const isLoaded = (tab) =>
     !!tab.linkedPanel && !tab.hasAttribute("pending") && !tab.hasAttribute("discarded");
 
-  function closeTargetWithinStack(tab) {
-    const members = tab.group.tabs.filter(t => t === tab || (!t.closing && !t.hidden));
-    const i = members.indexOf(tab);
-    let neighbour = null;
-    for (let d = 1; d < members.length; d++) {
-      for (const t of [members[i + d], members[i - d]]) {
-        if (!t) continue;
-        if (isLoaded(t)) return t;
-        neighbour ??= t;
-      }
-    }
-    return neighbour;
-  }
+  const containerOf = (tab) => tab.group ?? (tab.pinned ? "pinned" : "global");
 
   const firefoxPicksOwnerOrMRU = (tab) =>
     (tab.owner?.visible && Services.prefs.getBoolPref("browser.tabs.selectOwnerOnClose", true))
     || Services.prefs.getBoolPref("browser.tabs.selectMRUOnClose", false);
 
-  function closeTargetGlobal(tab) {
-    if (firefoxPicksOwnerOrMRU(tab)) return null;
-    // Visible tabs in order, each other stack reduced to its active tab.
+  // The first tab in `units` passing `ok`, searching outward from `tab`,
+  // left before right at each distance.
+  function nearest(units, tab, ok) {
+    const i = units.indexOf(tab);
+    for (let d = 1; i >= 0 && d < units.length; d++) {
+      for (const t of [units[i - d], units[i + d]]) {
+        if (t && ok(t)) return t;
+      }
+    }
+    return null;
+  }
+
+  function closeTarget(tab, avoid = new Set()) {
+    const home = containerOf(tab);
+    const remaining = gBrowser.visibleTabs
+      .filter(t => t === tab || (!t.closing && !avoid.has(t)));
+
+    // Its container, split at the tab: nearest first on each side.
+    const members = remaining.filter(t => containerOf(t) === home);
+    const i = members.indexOf(tab);
+    const left = members.slice(0, i).reverse();
+    const right = members.slice(i + 1);
+
+    // Tab order, each other stack or group reduced to its active tab (among
+    // its visible members: a collapsed group shows only its selected tab).
+    const visible = new Set(remaining);
+    const activeOf = (group) => group.tabs
+      .filter(t => visible.has(t))
+      .reduce((a, t) => (!a || t.lastAccessed > a.lastAccessed ? t : a), null);
     const units = [];
-    let lastStack = null;
-    for (const t of gBrowser.visibleTabs) {
-      if (t !== tab && t.closing) continue;
-      const stack = t !== tab && t.group?.hasAttribute(STACK_ATTR) ? t.group : null;
-      if (stack) {
-        if (stack !== lastStack) units.push(activeTabOf(stack) ?? t);
+    let lastGroup = null;
+    for (const t of remaining) {
+      const group = t.group && t.group !== home ? t.group : null;
+      if (group) {
+        if (group !== lastGroup) units.push(activeOf(group) ?? t);
       } else {
         units.push(t);
       }
-      lastStack = stack;
+      lastGroup = group;
     }
-    const i = units.indexOf(tab);
-    for (let d = 1; i >= 0 && d < units.length; d++) {
-      for (const t of [units[i + d], units[i - d]]) {
-        if (t && isLoaded(t)) return t;
-      }
-    }
-    return closeTargetBesideStack(tab);
+
+    return left.find(isLoaded) ?? right[0] ?? left[0]
+      ?? nearest(units, tab, isLoaded)
+      ?? nearest(units, tab, () => true);
   }
 
-  function closeTargetBesideStack(tab) {
-    const remaining = new Set(gBrowser.visibleTabs.filter(t => t !== tab && !t.closing));
-    const filter = t => remaining.has(t);
-    const next = gBrowser.tabContainer.findNextTab(tab, { direction: 1, filter })
-      ?? gBrowser.tabContainer.findNextTab(tab, { direction: -1, filter });
-    const group = next?.group;
-    if (!group || group === tab.group || !group.hasAttribute(STACK_ATTR)) return null;
-    const active = activeTabOf(group);
-    return active !== next ? active : null;
+  // Wraps tabbrowser _findTabToBlurTo for calls that pass tabs to avoid,
+  // while the successor is ours.
+  function hookFindTabToBlurTo() {
+    const orig = gBrowser._findTabToBlurTo;
+    if (typeof orig !== "function") return false;
+    gBrowser._findTabToBlurTo = function (tab, excludeTabs = []) {
+      if (tab?.selected && excludeTabs.length
+          && tab.successor && tab.successor === ourSuccessors.get(tab)) {
+        const avoid = new Set(excludeTabs);
+        const fxView = window.FirefoxViewHandler?.tab; // Firefox avoids it too
+        if (fxView) avoid.add(fxView);
+        const pick = closeTarget(tab, avoid);
+        if (pick) return pick;
+      }
+      return orig.call(this, tab, excludeTabs);
+    };
+    return true;
   }
 
   function refreshSuccessor() {
@@ -553,7 +592,7 @@
     const inStack = !!tab.group?.hasAttribute(STACK_ATTR);
     const successor = tab.successor;
     if (successor && successor !== ours && !(inStack && successor.group === tab.group)) return;
-    const pick = inStack ? closeTargetWithinStack(tab) : closeTargetGlobal(tab);
+    const pick = !inStack && firefoxPicksOwnerOrMRU(tab) ? null : closeTarget(tab);
     if (pick) {
       if (tab.successor !== pick) gBrowser.setSuccessor(tab, pick);
       ourSuccessors.set(tab, pick);
@@ -609,12 +648,18 @@
     // Anything that changes the selected tab, its neighbours, or whether
     // they're loaded.
     for (const type of ["TabSelect", "TabOpen", "TabClose", "TabMove", "TabShow", "TabHide",
-                        "TabGrouped", "TabUngrouped", "TabBrowserInserted", "TabBrowserDiscarded"]) {
+                        "TabPinned", "TabUnpinned", "TabGrouped", "TabUngrouped",
+                        "TabGroupCollapse", "TabGroupExpand",
+                        "TabBrowserInserted", "TabBrowserDiscarded"]) {
       gBrowser.tabContainer.addEventListener(type, scheduleSuccessor);
     }
     gBrowser.tabContainer.addEventListener("TabAttrModified", (e) => {
       if (e.detail?.changed?.some(a => a === "pending" || a === "discarded")) scheduleSuccessor();
     });
+    if (!hookFindTabToBlurTo()) {
+      console.warn("[stack-general-improvements] gBrowser._findTabToBlurTo not found; " +
+        "closing several tabs or unloading may leave the stack/group");
+    }
     scheduleSuccessor();
 
     syncAll();
