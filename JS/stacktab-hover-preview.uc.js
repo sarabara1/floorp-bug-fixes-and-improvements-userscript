@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Stack tabs: hover previews
+// @name           stacktab-hover-preview.uc.js
+// @description    Stack tabs: hover previews
 // @include        main
 // ==/UserScript==
 

@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Stack tab context menu: show "Add Tab to Group"
+// @name           stacktab-move-to-group-menu.uc.js
+// @description    Stack tab context menu: show "Add Tab to Group"
 // @include        main
 // ==/UserScript==
 

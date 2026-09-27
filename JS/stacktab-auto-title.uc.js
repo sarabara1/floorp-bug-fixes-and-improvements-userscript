@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Stack auto-title: unnamed stacks show their active tab's title and icon
+// @name           stacktab-auto-title.uc.js
+// @description    Stack auto-title: unnamed stacks show their active tab's title and icon
 // @include        main
 // ==/UserScript==
 

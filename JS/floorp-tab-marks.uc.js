@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Tab marks: colored border on chosen tabs
+// @name           floorp-tab-marks.uc.js
+// @description    Tab marks: colored border on chosen tabs
 // @include        main
 // ==/UserScript==
 

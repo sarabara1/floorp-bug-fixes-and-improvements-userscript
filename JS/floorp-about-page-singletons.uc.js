@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           about: page singletons (about:hub, about:preferences open once, globally)
+// @name           floorp-about-page-singletons.uc.js
+// @description    about: page singletons (about:hub, about:preferences open once, globally)
 // @include        main
 // ==/UserScript==
 

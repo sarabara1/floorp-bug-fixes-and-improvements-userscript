@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           New-tab NON-SPATIAL triggers (Ctrl+T + gesture) open in stack
+// @name           stacktab-hotkey-opens-in-stack.uc.js
+// @description    New-tab NON-SPATIAL triggers (Ctrl+T + gesture) open in stack
 // @include        main
 // ==/UserScript==
 

@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Group/stack context menu: Unload all tabs in group|stack
+// @name           stacktab-unload-context-menu-item.uc.js
+// @description    Group/stack context menu: Unload all tabs in group|stack
 // @include        main
 // ==/UserScript==
 

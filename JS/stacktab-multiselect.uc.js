@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Stack tabs: Ctrl/Shift-click to multi-select
+// @name           stacktab-multiselect.uc.js
+// @description    Stack tabs: Ctrl/Shift-click to multi-select
 // @include        main
 // ==/UserScript==
 

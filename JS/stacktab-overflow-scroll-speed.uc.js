@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Stack strip: faster + smooth mouse-wheel scroll
+// @name           stacktab-overflow-scroll-speed.uc.js
+// @description    Stack strip: faster + smooth mouse-wheel scroll
 // @include        main
 // ==/UserScript==
 

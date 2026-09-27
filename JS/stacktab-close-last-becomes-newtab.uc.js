@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Stack: closing the LAST tab becomes a new-tab page (not stack close)
+// @name           stacktab-close-last-becomes-newtab.uc.js
+// @description    Stack: closing the LAST tab becomes a new-tab page (not stack close)
 // @include        main
 // ==/UserScript==
 

@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Stack tabs: expand animation on new-tab creation
+// @name           stacktab-newtab-expand-animation.uc.js
+// @description    Stack tabs: expand animation on new-tab creation
 // @include        main
 // ==/UserScript==
 

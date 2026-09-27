@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Stack strip: auto-scroll (drag-to-edge + arrow click-hold)
+// @name           stacktab-drag-edge-scroll.uc.js
+// @description    Stack strip: auto-scroll (drag-to-edge + arrow click-hold)
 // @include        main
 // ==/UserScript==
 

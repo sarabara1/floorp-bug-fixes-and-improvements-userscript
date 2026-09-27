@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Stack tabs: general fixes
+// @name           stacktab-general-fixes.uc.js
+// @description    Stack tabs: general fixes
 // @include        main
 // ==/UserScript==
 

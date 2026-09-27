@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Confirm before closing a tab stack / group (multi-tab warning)
+// @name           stacktab-close-confirm.uc.js
+// @description    Confirm before closing a tab stack / group (multi-tab warning)
 // @include        main
 // ==/UserScript==
 

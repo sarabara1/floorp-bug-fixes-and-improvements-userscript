@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Workspaces: scroll the toolbar button to switch (no wrap)
+// @name           floorp-workspaces-scroll-switch.uc.js
+// @description    Workspaces: scroll the toolbar button to switch (no wrap)
 // @include        main
 // ==/UserScript==
 

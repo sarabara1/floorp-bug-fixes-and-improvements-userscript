@@ -1,5 +1,6 @@
 // ==UserScript==
-// @name           Stack new-tab button: position, click filtering, global-+ fix
+// @name           stacktab-inline-newtab-button.uc.js
+// @description    Stack new-tab button: position, click filtering, global-+ fix
 // @include        main
 // ==/UserScript==
 
