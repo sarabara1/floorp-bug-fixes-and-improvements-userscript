@@ -5,15 +5,15 @@ The tab stack implementation leaves a lot to be desired. They're clunky and frus
 
 **JS/stacktab-general-fixes.uc.js** - Fixes tab context menu entries showing only their icons, with no text, when the browser starts on a stack tab. Fixes a second window sometimes opening with its stacks turned into plain tab groups and no option to change them back.
 
-**JS/stacktab-global-drag-fix.uc.js** - Highly recommended. Fixes the dragging of stacks and tabs on the global tab bar. Tabs and stacks can be moved around smoothly without ordering and merge issues. Fixes tabs being merged with stacks when placed after it. Fixes stack tabs so they can be placed between stacks.
+**JS/floorp-tab-and-file-drag-fix.uc.js** - Highly recommended. Fixes the dragging of stacks and tabs on the global tab bar. Tabs and stacks can be moved around smoothly without ordering and merge issues. Fixes tabs being merged with stacks when placed after it. Fixes stack tabs so they can be placed between stacks. Tabs dragged in from other windows can be placed between stacks or dropped on a stack to join it. Allows you drop links, text. and files onto a stack's tabs strip, or onto a stack itself.
 
 **CSS/floorp-sidebar-resize-fix.us.css** - Fixes unresizable sidebar when using some default Floorp themes.
 
 # Recommended
 
-**JS/stacktab-mouse-improvements.uc.js** - Context-aware middle click on empty tab bar space to open a new tab. New tabs will open in the stack or global tabs depending on where you click, as well as drag and drop support for text/images/whatever. Dragging tabs from other windows aren't yet supported, but planned.
-
 **JS/stacktab-general-improvements.uc.js** - Makes stacks and stack tabs look and act more like global tabs. Shows the container color under stack tabs, adds the audio button with click to mute/unmute, shows the loading animation on loading stack tabs, moves the close button to the right side, removes the pointer cursor from stacks, remembers each stack's active tab across restarts, and closing or unloading a tab will prefer to switch to the left. It keeps you in its stack, group, or the global tabs whenever possible. Only when it was the last tab it will go to the nearest loaded tab elsewhere, and a neighbouring stack or group opens on its active tab instead of the "nearest".
+
+**JS/stacktab-mouse-improvements.uc.js** - Context-aware middle click on an empty tab bar space to open a new tab. New tabs will open in the stack or global tabs depending on where you click.
 
 **JS/stacktab-hotkey-opens-in-stack.uc.js** - Makes the new tab hotkey & gesture context-aware. New tabs are opened in the currently active stack or in the global tab area, depending on which you're using.
 
