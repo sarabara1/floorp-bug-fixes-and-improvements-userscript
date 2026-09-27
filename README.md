@@ -91,8 +91,6 @@ Every file is self-contained, so pick only what you want. A few are made to work
 
 Open `about:support` and click **Clear startup cache…** — it asks to restart Floorp. Do this every time you add, remove or update a script, or the browser may keep running the old version.
 
-To check it worked, open the Browser Console (`Ctrl+Shift+J`, or `Cmd+Shift+J` on macOS): most scripts log a line such as `[stack-general-improvements] loaded` when they start.
-
 ### Removing a script
 
 Delete it from `chrome/JS/` or `chrome/CSS/` and clear the startup cache again.
