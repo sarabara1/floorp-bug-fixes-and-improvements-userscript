@@ -1,0 +1,18 @@
+/* ==UserScript==
+// @description Keeps auto-titled stacks (from stacktab-auto-title.uc.js) a full tab's width when stackktab-compact-stacks.uc.css makes the rest compact.
+// @long-description
+*/
+
+@charset "UTF-8";
+@-moz-document url(chrome://browser/content/browser.xhtml) {
+	/* uc-auto-title is set by stacktab-auto-title.uc.js on unnamed stacks.
+	   They get back a full tab's maximum width, so they match the tabs
+	   around them and still compress with them (Floorp's tab-like flex is
+	   untouched). The selector outranks the compact stylesheet's, whichever
+	   loads first. No !important: Floorp's inline widths during a drag must
+	   win. On its own, without the compact stylesheet, this matches Floorp's
+	   default and changes nothing. */
+	:root #tabbrowser-tabs tab-group[data-floorp-stack] > .tab-group-label-container:has(> .tab-group-label-hover-highlight > .tab-group-label[uc-auto-title]) {
+	  max-width: var(--tab-max-width, 225px);
+	}
+}
