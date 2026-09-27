@@ -23,8 +23,8 @@
 // Unload primitive: gBrowser.discardBrowser(tab) — Firefox's tab-unload. It
 // refuses the ACTIVE tab, so to unload the WHOLE stack we unload every other
 // tab first, then switch to the nearest already-LOADED tab outside the stack
-// (like Floorp — never wakes a discarded tab) and unload the former-active one
-// too. If no loaded tab exists outside the stack, a fresh global tab
+// (never waking a discarded tab), where another stack or group means its
+// active tab (see loadedTabOutside), and unload the former-active one too. If no loaded tab exists outside the stack, a fresh global tab
 // (about:newtab, at the end, outside all stacks) is opened to land on.
 
 (function () {
@@ -40,17 +40,43 @@
     }
   }
 
-  // Nearest already-LOADED tab that is NOT in `group` — where to switch before
-  // unloading the group's active tab (never wakes a discarded tab). Null if
-  // every tab outside the group is unloaded/absent.
+  const isLoaded = (tab) =>
+    !!tab.linkedPanel && !tab.hasAttribute("pending") && !tab.hasAttribute("discarded");
+
+  // Where to switch before unloading the group's active tab: the nearest
+  // loaded tab outside `group` in tab order, left winning a tie, where every
+  // other stack or group counts as one tab — its active tab, the one you last
+  // viewed there (among its visible members: a collapsed group shows only its
+  // selected tab). The same rule closing a tab uses when it has to leave its
+  // stack (stacktab-general-improvements.uc.js). Null if nothing outside is
+  // loaded.
   function loadedTabOutside(group) {
-    const pool = gBrowser.tabs.filter(
-      t => t.group !== group && !t.closing && !t.hidden && isUnloadable(t)
-    );
-    if (!pool.length) return null;
-    const here = gBrowser.selectedTab?._tPos ?? 0;
-    pool.sort((a, b) => Math.abs(a._tPos - here) - Math.abs(b._tPos - here));
-    return pool[0];
+    const visible = gBrowser.visibleTabs.filter(t => !t.closing);
+    const visibleSet = new Set(visible);
+    const activeOf = (g) => g.tabs
+      .filter(t => visibleSet.has(t))
+      .reduce((a, t) => (!a || t.lastAccessed > a.lastAccessed ? t : a), null);
+
+    // Tab order with `group` as one entry (null) and every other group as
+    // its active tab.
+    const units = [];
+    let lastGroup;
+    for (const t of visible) {
+      const g = t.group ?? null;
+      if (!g || g !== lastGroup) {
+        if (g === group) units.push(null);
+        else units.push(g ? activeOf(g) : t);
+      }
+      lastGroup = g;
+    }
+
+    const i = units.indexOf(null);
+    for (let d = 1; i >= 0 && d < units.length; d++) {
+      for (const t of [units[i - d], units[i + d]]) {
+        if (t && isLoaded(t)) return t;
+      }
+    }
+    return null;
   }
 
   function unloadGroup(group) {
