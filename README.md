@@ -13,7 +13,7 @@ The tab stack implementation leaves a lot to be desired. They're clunky and frus
 
 **stacktab-mouse-improvements.uc.js** - Context-aware middle click on empty tab bar space to open a new tab. New tabs will open in the stack or global tabs depending on where you click, as well as drag and drop support for text/images/whatever. Dragging tabs from other windows aren't yet supported, but planned.
 
-**stacktab-general-improvements.uc.js** - Makes stacks and stack tabs look and act more like global tabs. Shows the container color under stack tabs, adds the audio button with click to mute/unmute, shows the loading animation on loading stack tabs, moves the close button to the right side, removes the pointer cursor from stacks, remembers each stack's active tab across restarts, switches to a stack's active tab when you close the tab next to it, and closing a tab switches to the nearest loaded tab (in a stack or in the global tabs) instead of one that still has to load.
+**stacktab-general-improvements.uc.js** - Makes stacks and stack tabs look and act more like global tabs. Shows the container color under stack tabs, adds the audio button with click to mute/unmute, shows the loading animation on loading stack tabs, moves the close button to the right side, removes the pointer cursor from stacks, remembers each stack's active tab across restarts, and closing or unloading a tab will prefer to switch to the left. It keeps you in its stack, group, or the global tabs whenever possible. Only when it was the last tab it will go to the nearest loaded tab elsewhere, and a neighbouring stack or group opens on its active tab instead of the "nearest".
 
 **stacktab-hotkey-opens-in-stack.uc.js** - Makes the new tab hotkey & gesture context-aware. New tabs are opened in the currently active stack or in the global tab area, depending on which you're using.
 
@@ -41,11 +41,13 @@ The tab stack implementation leaves a lot to be desired. They're clunky and frus
 
 **stacktab-close-last-becomes-newtab.uc.js** - Makes closing the last tab in a stack switch to a new tab page instead of removing the stack. It still allows the stack to be closed on the stack handle itself. This mimics global window behavior. Useful for people who like to keep long-standing stacks and don't want to be careful about accidentally closing one.
 
+**stacktab-auto-title-border.uc.css** - Gives stacks auto-titled by stacktab-auto-title.uc.js a border in your theme's text colour (light on dark themes, dark on light ones), so they stand out from stacks you've named.
+
 **floorp-workspaces-scroll-switch.uc.js.** - Scroll over the workspaces button to quickly switch between them.
 
 **floorp-about-page-singletons.uc.js** - This is the odd one out. It makes the Floorp hub a singleton like the rest of the about: pages. This makes them open in the global tabs and the browser will prefer to switch to existing hubs instead of opening a new one. Simply adds cohesion with the rest of Firefox.
 
-**stacktab-auto-title-border.uc.css** - Gives stacks auto-titled by stacktab-auto-title.uc.js a border in your theme's text colour (light on dark themes, dark on light ones), so they stand out from stacks you've named.
+**floorp-tab-marks.uc.js** - Adds a "Mark Tab" context menu entry to tabs that allows you to pick a color so you can keep track of it.
 
 **stackktab-compact-stacks.uc.css** - Makes stacks a bit more compact, between the width of a group and normal tab. Great if you like to have a bunch of assorted stacks.
 
