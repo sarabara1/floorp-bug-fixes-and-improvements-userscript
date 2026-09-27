@@ -55,4 +55,44 @@ The tab stack implementation leaves a lot to be desired. They're clunky and frus
 
 # Installation
 
-Install fx-autoconfig https://github.com/MrOtherGuy/fx-autoconfig then copy the JS folder and optionally userChrome.css to your profile -> chrome folder (you'll know where it is after installing fx-autoconfig). Delete unwanted scripts as you wish.
+The scripts run through [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig), a small loader for Firefox-based browsers. Then add or remove whichever scripts and styles you'd like.
+
+### 1. Install fx-autoconfig
+
+Download fx-autoconfig (**Code → Download ZIP** on its GitHub page) and extract it. It has two parts:
+
+**Program files** — copy the contents of its `program` folder into the folder that contains the Floorp executable:
+
+| OS | Floorp folder |
+|---|---|
+| Windows | `C:\Program Files\Ablaze Floorp\` |
+| macOS | `Floorp.app/Contents/Resources/` |
+| Linux | the folder with the `floorp` binary (e.g. `/usr/lib/floorp/`) |
+
+You should end up with `config.js` next to the Floorp executable and `config-prefs.js` in its `defaults/pref/` folder. On Windows this needs administrator rights.
+
+**Profile files** — open `about:support` in Floorp, find **Profile Folder** and click **Open Folder**. Copy the `chrome` folder from fx-autoconfig's `profile` folder into it. You should end up with:
+
+```
+<profile>/chrome/
+├── CSS/
+├── JS/
+└── utils/
+```
+
+### 2. Add the scripts you want
+
+- `.uc.js` files from this repo's `JS` folder go in `chrome/JS/`
+- `.uc.css` files from this repo's `CSS` folder go in `chrome/CSS/`
+
+Every file is self-contained, so pick only what you want. A few are made to work together; their descriptions above say so.
+
+### 3. Restart Floorp
+
+Open `about:support` and click **Clear startup cache…** — it asks to restart Floorp. Do this every time you add, remove or update a script, or the browser may keep running the old version.
+
+To check it worked, open the Browser Console (`Ctrl+Shift+J`, or `Cmd+Shift+J` on macOS): most scripts log a line such as `[stack-general-improvements] loaded` when they start.
+
+### Removing a script
+
+Delete it from `chrome/JS/` or `chrome/CSS/` and clear the startup cache again.
