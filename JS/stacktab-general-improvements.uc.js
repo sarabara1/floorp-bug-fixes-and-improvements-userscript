@@ -199,9 +199,17 @@
       display: revert-layer !important;
     }
 
-    /* The tab count is the label's ::after, flush with its end padding. */
-    tab-group[${STACK_ATTR}] .tab-group-label-container:hover .tab-group-label {
-      padding-inline-end: 24px !important;
+    /* The tab count (the label's ::after, flush with its end padding) moves
+       over to clear the close button, and the title's fade-out (the ::before
+       mask) moves in with it, keeping the same gap. Both only change
+       painting, not layout, so the chip keeps its width on hover even when
+       something sizes it to fit its title. */
+    tab-group[${STACK_ATTR}] .tab-group-label-container:hover .tab-group-label::after {
+      position: relative;
+      inset-inline-start: -15px;
+    }
+    tab-group[${STACK_ATTR}] .tab-group-label-container:hover .tab-group-label::before {
+      mask-image: linear-gradient(to left, transparent 15px, black calc(15px + 1em));
     }
 
     /* ---- Loading throbber ---- */
