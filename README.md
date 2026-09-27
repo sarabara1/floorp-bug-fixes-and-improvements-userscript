@@ -51,6 +51,8 @@ The tab stack implementation leaves a lot to be desired. They're clunky and frus
 
 **CSS/stackktab-compact-stacks.uc.css** - Makes stacks a bit more compact, between the width of a group and normal tab. Great if you like to have a bunch of assorted stacks.
 
+**CSS/stacktab-auto-title-full-width.uc.css** - Use with stackktab-compact-stacks.uc.css and stacktab-auto-title.uc.js. Keeps auto-titled stacks the full width of a normal tab so they match your tabs, while named stacks stay compact. They still compress with your tabs when the tab bar fills up.
+
 **CSS/stacktab-auto-title-border.uc.css** - Gives auto-titled stacks (from stacktab-auto-title.uc.js) a white or black border to differentiate them from named stacks.
 
 # Installation
