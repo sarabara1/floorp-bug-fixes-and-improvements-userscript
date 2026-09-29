@@ -1,13 +1,13 @@
 # Floorp Tab Stack Improvements 
-The tab stack implementation leaves a lot to be desired. They're clunky and frustrating to use. With the help of ~~vibecoding~~ Agentic Enginnering I've created a set of userscripts (and an optional stylesheet) to make tab stacks practical. The end goal is to make tab stacks as seamless and practical as global tabs, like Vivaldi. **The scripts and stylesheet are modular and self-contained, pick and choose what to add.**
+The tab stack implementation leaves a lot to be desired. They're clunky and frustrating to use. With the help of ~~vibecoding~~ Agentic Engineering I've created a set of userscripts (and a few optional stylesheets) to make tab stacks practical. The end goal is to make tab stacks as seamless and practical as global tabs, like Vivaldi. **The scripts and stylesheets are modular and self-contained, pick and choose what to add.**
 
 # Bug Fixes
 
 **JS/stacktab-general-fixes.uc.js** - Fixes tab context menu entries showing only their icons, with no text, when the browser starts on a stack tab. Fixes a second window sometimes opening with its stacks turned into plain tab groups and no option to change them back.
 
-**JS/floorp-tab-and-file-drag-fix.uc.js** - Highly recommended. Fixes the dragging of stacks and tabs on the global tab bar. Tabs and stacks can be moved around smoothly without ordering and merge issues. Fixes tabs being merged with stacks when placed after it. Fixes stack tabs so they can be placed between stacks. Tabs dragged in from other windows can be placed between stacks or dropped on a stack to join it. Allows you drop links, text. and files onto a stack's tabs strip, or onto a stack itself.
+**JS/floorp-tab-and-file-drag-fix.uc.js** - Highly recommended. Fixes the dragging of stacks and tabs on the global tab bar. Tabs and stacks can be moved around smoothly without ordering and merge issues. Fixes tabs being merged with stacks when placed after it. Fixes stack tabs so they can be placed between stacks. Tabs dragged in from other windows can be placed between stacks or dropped on a stack to join it. Allows you to drop links, text and files onto a stack's tab strip, or onto a stack itself.
 
-**CSS/floorp-sidebar-resize-fix.us.css** - Fixes unresizable sidebar when using some default Floorp themes.
+**CSS/floorp-sidebar-resize-fix.uc.css** - Fixes unresizable sidebar when using some default Floorp themes.
 
 # Recommended
 
@@ -23,7 +23,7 @@ The tab stack implementation leaves a lot to be desired. They're clunky and frus
 
 **JS/stacktab-drag-edge-scroll.uc.js** - Allows stack area to auto-scroll while dragging tabs to the edge. Also adds continuous scroll while holding left click on the arrows.
 
-**JS/stacktab-multiselect.uc.js** - Allows selecting multiple tabs from stacks. Useful with stacktab-move-to-group and stacktab-auto-title.
+**JS/stacktab-multiselect.uc.js** - Allows selecting multiple tabs from stacks. Useful with stacktab-move-to-group-menu.uc.js and stacktab-auto-title.uc.js.
 
 **JS/stacktab-move-to-group-menu.uc.js** - Enables the "Add Tab to Group" option to stack tabs.
 
@@ -33,7 +33,7 @@ The tab stack implementation leaves a lot to be desired. They're clunky and frus
 
 # Optional Features
 
-**JS/stacktab-auto-title.uc.js** - When you create a stack the "Manage Stack" options won't automatically appear and stacks will show the name and icon of their active tab. You can still change the name manually, makes stacks vivaldi-like, useful with stacktab-multiselect.uc.js and stacktab-move-to-group-menu.uc.js
+**JS/stacktab-auto-title.uc.js** - When you create a stack the "Manage Stack" options won't automatically appear. Unnamed stacks show the title and icon of their active tab. You can still name a stack manually, and clearing its name brings the auto-title back. Adds White to the colours you can pick for stacks and groups, and the default is chosen based on your theme. You can change the color without losing the auto-title. Useful with stacktab-multiselect.uc.js and stacktab-move-to-group-menu.uc.js
 
 **JS/stacktab-close-confirm.uc.js** - Adds a dialog when closing a stack or group if it contains multiple tabs just like windows if "Ask before closing multiple tabs" is enabled in your settings.
 
@@ -47,13 +47,11 @@ The tab stack implementation leaves a lot to be desired. They're clunky and frus
 
 **JS/floorp-about-page-singletons.uc.js** - This is the odd one out. It makes the Floorp hub a singleton like the rest of the about: pages. This makes them open in the global tabs and the browser will prefer to switch to existing hubs instead of opening a new one. Simply adds cohesion with the rest of Firefox.
 
-**JS/floorp-tab-marks.uc.js** - Adds a "Mark Tab" context menu entry to tabs that allows you to pick a color so you can keep track of it.
+**JS/floorp-tab-marks.uc.js** - Adds a "Mark Tab" context menu entry to tabs, global and in stacks, that allows you to pick a color so you can keep track of them. Works on multiple selected tabs and persists across restarts.
 
 **CSS/stackktab-compact-stacks.uc.css** - Makes stacks a bit more compact, between the width of a group and normal tab. Great if you like to have a bunch of assorted stacks.
 
 **CSS/stacktab-auto-title-full-width.uc.css** - Use with stackktab-compact-stacks.uc.css and stacktab-auto-title.uc.js. Keeps auto-titled stacks the full width of a normal tab so they match your tabs, while named stacks stay compact. They still compress with your tabs when the tab bar fills up.
-
-**CSS/stacktab-auto-title-border.uc.css** - Gives auto-titled stacks (from stacktab-auto-title.uc.js) a white or black border to differentiate them from named stacks.
 
 # Installation
 
