@@ -1,22 +1,63 @@
 // ==UserScript==
 // @name           stacktab-auto-title.uc.js
-// @description    Stack auto-title: unnamed stacks show their active tab's title and icon
+// @description    Stack auto-title: unnamed stacks show their active tab's title and icon, and start gray or white
 // @include        main
 // ==/UserScript==
 
-// A stack that was never named ("New Stack", or a numbered "New Stack 2")
-// displays the title and favicon of its active tab instead, like Vivaldi.
-// Naming the stack (right-click → Manage Stack…) turns this off for that
-// stack; clearing the name back to a default or empty turns it on again.
+// A stack with no name displays the title and favicon of its active tab
+// instead, like Vivaldi. Naming the stack (right-click → Manage Stack…) turns
+// this off for that stack; clearing the name turns it on again.
+//
+// Nameless by default: Floorp gives every stack with an empty label a
+// generated one ("New Stack", "New Stack 2", …) each time it decorates the
+// strip, right after marking the group data-floorp-stack. The tab-group
+// `label` setter is wrapped to drop exactly that write: a generated name onto
+// a stack whose label is empty. Real renames go through the same setter one
+// keystroke at a time, so they're never empty → "New Stack" in one step and
+// pass through. A stack that already carries a generated name when we first
+// see it (restored from an older session, or named before this script
+// loaded) is cleared once.
+//
+// Colour: a new stack starts dark gray or white, whichever is closer to the
+// tab text colour, so it matches the theme instead of taking Firefox's next
+// unused colour. This only happens at creation, so any colour picked
+// afterwards sticks, and the stack stays auto-titled. New stacks are
+// recognised by wrapping gBrowser's addTabGroup: restores and cross-window
+// moves pass the group's existing id, new groups don't. As with the popup
+// below, the stack marker can land just after creation, so the colour is
+// chosen one tick later.
+//
+// White: a group colour in Firefox is just a name. `group.color = "blue"`
+// points the group's colour variables at --tab-group-blue,
+// --tab-group-blue-invert and so on, and session restore saves the name as-is.
+// So White is a set of --tab-group-white-* variables plus a swatch in the
+// editor panel, and works for native groups too. What each variable colours
+// (tabs.css; -text and -hover are only used by the Nova tab style):
+//   color   expanded group label background, group line
+//   invert  collapsed group label background
+//   pale    label text in light mode; collapsed label text/outline and line in
+//           dark mode
+// Label text stays dark wherever the background is white, and the invert is
+// dark so a collapsed white group reads as light-on-dark like the others.
+// Floorp draws a stack's border and glyph with the invert colour, which would
+// make a white stack look gray, so white stacks get white as their invert
+// instead (stacks never collapse). A white group is matched by its inline
+// style, where Firefox writes `--tab-group-color: var(--tab-group-white)`.
+//
+// The editor panel builds its swatches once from a fixed list, so White is
+// added after Gray whenever the panel opens, and checked when the group being
+// edited is white. The panel's own change handler applies whichever
+// `tab-group-color` radio is picked, so choosing White needs no extra code.
 //
 // Creating a stack also skips the name/color popup, since an unnamed stack
 // now has a useful title on its own. Native Firefox groups still get the
 // popup, and Manage Stack… still opens the editor normally.
 //
-// Display-only: we rewrite the header's visible text and icon, never the
-// group's `label`. The real name stays "New Stack", so session restore, the
-// rename panel and Floorp's own stack data are untouched, and the moment the
-// stack is renamed Firefox writes the new label into the header itself.
+// Display-only: apart from the naming above, we rewrite the header's visible
+// text and icon, never the group's `label`. The real name stays empty, so
+// session restore, the rename panel and Floorp's own stack data are
+// untouched, and the moment the stack is renamed Firefox writes the new label
+// into the header itself.
 //
 // "Active tab" = the selected tab if it's in the stack, otherwise the stack's
 // most recently used tab (lastAccessed) — i.e. the tab you'd land on.
@@ -52,7 +93,7 @@
 // popup is requested we re-check one tick later before deciding.
 
 (function () {
-  const DEFAULT_NAME = "New Stack";
+  const FALLBACK_TITLE = "New Stack"; // shown only if a stack has no tabs
   const OVERRIDE_ATTR = "uc-auto-title"; // marks a header we're overriding
   const FLOORP_TITLE_ATTR = "data-floorp-title"; // what a stack header renders
   const ICON_ATTR = "uc-auto-icon"; // marks a stack icon showing a favicon
@@ -60,8 +101,28 @@
   const ICON_BUSY_ATTR = "uc-busy"; // hides the favicon while the throbber plays
   const THROBBER_CLASS = "uc-stack-throbber";
   const DEFAULT_FAVICON = "chrome://global/skin/icons/defaultFavicon.svg";
+  const WHITE_SWATCH_ID = "tab-group-editor-swatch-white";
+
+  // A soft white with the same cool tint as Firefox's gray (#5e6a77), toned
+  // down so it doesn't glare next to it. Move it toward #ffffff for a brighter
+  // white, or toward #99a6b4 (Firefox's light gray) for a dimmer one.
+  const WHITE_SHADE = "#d5dbe2";
+  const WHITE_SHADE_HOVER = "#c3cad2";
 
   const CSS = `
+    :root {
+      --tab-group-white: ${WHITE_SHADE};
+      --tab-group-white-hover: ${WHITE_SHADE_HOVER};
+      --tab-group-white-invert: #52525e;
+      --tab-group-white-pale: light-dark(#15141a, ${WHITE_SHADE});
+      --tab-group-white-text: #15141a;
+      --tab-group-white-text-invert: #ffffff;
+    }
+
+    tab-group[data-floorp-stack][style*="var(--tab-group-white)"] {
+      --tab-group-color-invert: var(--tab-group-white) !important;
+    }
+
     tab-group[data-floorp-stack] .floorp-stack-icon[${ICON_ATTR}] {
       width: 16px;
       height: 16px;
@@ -138,17 +199,80 @@
   `;
 
   const logged = new WeakSet(); // stacks already described in the console
+  const seen = new WeakSet(); // stacks checked for a generated name
 
   const isStack = (group) => !!group?.hasAttribute?.("data-floorp-stack");
+  // The `label` attribute holds a zero-width space when the name is empty.
   const nameOf = (group) =>
-    (group.label ?? group.getAttribute("label") ?? "").trim();
-  // Floorp keeps stack names unique, so later default names get a number
-  // appended ("New Stack 2", "New Stack (2)"); those count as unnamed too.
-  const DEFAULT_NAME_RE = /^New Stack(?:[\s\-_#]*\(?\d+\)?)?$/;
-  const isUnnamed = (group) => {
-    const name = nameOf(group);
-    return !name || DEFAULT_NAME_RE.test(name);
-  };
+    (group.label ?? group.getAttribute("label") ?? "").replace(/​/g, "").trim();
+  const isUnnamed = (group) => !nameOf(group);
+
+  // ---------------------------------------------------------------- names --
+
+  // The names Floorp's nextAutoStackName generates.
+  const AUTO_NAME_RE = /^New Stack(?: \d+)?$/;
+
+  function hookStackNaming() {
+    const proto = customElements.get("tab-group")?.prototype;
+    if (!proto) return false;
+    if (proto.__ucNamelessStacks) return true;
+    const desc = Object.getOwnPropertyDescriptor(proto, "label");
+    if (!desc?.get || !desc?.set) return false;
+
+    Object.defineProperty(proto, "label", {
+      ...desc,
+      set(val) {
+        if (isStack(this) && !desc.get.call(this) && AUTO_NAME_RE.test(val ?? "")) return;
+        desc.set.call(this, val);
+      },
+    });
+
+    proto.__ucNamelessStacks = true;
+    return true;
+  }
+
+  function clearGeneratedName(group) {
+    if (seen.has(group)) return;
+    seen.add(group);
+    if (AUTO_NAME_RE.test(nameOf(group))) group.label = "";
+  }
+
+  // --------------------------------------------------------------- colour --
+
+  const hexRGB = (hex) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  const parseRGB = (css) => css.match(/\d+(\.\d+)?/g)?.slice(0, 3).map(Number) ?? null;
+  const distance = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+  const WHITE = hexRGB(WHITE_SHADE);
+  const DARK_GRAY = [0x5e, 0x6a, 0x77]; // Firefox's gray as a stack shows it on dark themes
+
+  function autoColorFor(group) {
+    const text = parseRGB(getComputedStyle(labelElementOf(group) || gBrowser.tabContainer).color);
+    if (!text) return "gray";
+    return distance(text, WHITE) < distance(text, DARK_GRAY) ? "white" : "gray";
+  }
+
+  function hookNewStackColor() {
+    if (gBrowser.__ucAutoStackColor) return true;
+    const orig = gBrowser.addTabGroup;
+    if (typeof orig !== "function") return false;
+
+    gBrowser.addTabGroup = function (tabs, opts = {}) {
+      const group = orig.call(this, tabs, opts);
+      if (group && !opts?.id && !opts?.label) {
+        setTimeout(() => {
+          const unnamed = isUnnamed(group) || AUTO_NAME_RE.test(nameOf(group));
+          if (group.isConnected && isStack(group) && unnamed) {
+            group.color = autoColorFor(group);
+          }
+        }, 0);
+      }
+      return group;
+    };
+
+    gBrowser.__ucAutoStackColor = true;
+    return true;
+  }
 
   // ---------------------------------------------------------------- title --
 
@@ -222,6 +346,7 @@
   function refreshGroup(group) {
     const el = labelElementOf(group);
     describe(group, el);
+    clearGeneratedName(group);
     if (!el) return;
     const icon = el.querySelector(":scope > .floorp-stack-icon");
 
@@ -237,7 +362,7 @@
     }
 
     const tab = activeTabOf(group);
-    const title = tab?.label || DEFAULT_NAME;
+    const title = tab?.label || FALLBACK_TITLE;
     setText(el, title);
     if (icon) {
       if (tab) setIcon(icon, tab.getAttribute("image") || DEFAULT_FAVICON);
@@ -292,6 +417,39 @@
     return !!panel && wrapCreateModal(Object.getPrototypeOf(panel));
   }
 
+  function addWhiteSwatch(menu) {
+    const container = menu.querySelector(".tab-group-editor-swatches");
+    if (!container) return null;
+    let input = container.querySelector(`#${WHITE_SWATCH_ID}`);
+    if (input) return input;
+
+    input = document.createElement("input");
+    input.id = WHITE_SWATCH_ID;
+    input.type = "radio";
+    input.name = "tab-group-color";
+    input.value = "white";
+
+    const label = document.createElement("label");
+    label.classList.add("tab-group-editor-swatch");
+    label.htmlFor = WHITE_SWATCH_ID;
+    label.textContent = "White"; // hidden (font-size: 0); read by screen readers
+    label.style.setProperty("--tabgroup-swatch-color", "var(--tab-group-white)");
+    label.style.setProperty("--tabgroup-swatch-color-invert", "var(--tab-group-white-invert)");
+
+    const gray = container.querySelector('label[for="tab-group-editor-swatch-gray"]');
+    if (gray) gray.after(input, label);
+    else container.append(input, label);
+    return input;
+  }
+
+  // activeGroup is set before the panel opens, in both create and edit mode.
+  function onEditorShowing(e) {
+    const menu = e.target.parentNode;
+    if (e.target.localName !== "panel" || menu?.localName !== "tabgroup-menu") return;
+    const input = addWhiteSwatch(menu);
+    if (input) input.checked = menu.activeGroup?.color === "white";
+  }
+
   // ----------------------------------------------------------------- init --
 
   function init() {
@@ -315,11 +473,17 @@
       attributes: true, attributeFilter: ["label", FLOORP_TITLE_ATTR],
     });
 
+    document.addEventListener("popupshowing", onEditorShowing, true);
+
+    const namingHooked = hookStackNaming();
+    const colorHooked = hookNewStackColor();
     refreshAll();
 
     const hooked = hookCreatePopup();
     console.log("[stack-auto-title] loaded; create popup",
-      hooked ? "suppressed for stacks" : "NOT hooked (openCreateModal not found)");
+      hooked ? "suppressed for stacks" : "NOT hooked (openCreateModal not found)",
+      "| stack naming", namingHooked ? "suppressed" : "NOT hooked (tab-group label setter not found)",
+      "| new stack colour", colorHooked ? "hooked" : "NOT hooked (gBrowser.addTabGroup not found)");
   }
 
   if (gBrowserInit && gBrowserInit.delayedStartupFinished) init();
