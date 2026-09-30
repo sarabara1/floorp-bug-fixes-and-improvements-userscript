@@ -7,6 +7,8 @@ The tab stack implementation leaves a lot to be desired. They're clunky and frus
 
 **JS/floorp-tab-and-file-drag-fix.uc.js** - Highly recommended. Fixes the dragging of stacks and tabs on the global tab bar. Tabs and stacks can be moved around smoothly without ordering and merge issues. Fixes tabs being merged with stacks when placed after it. Fixes stack tabs so they can be placed between stacks. Tabs dragged in from other windows can be placed between stacks or dropped on a stack to join it. Allows you to drop links, text and files onto a stack's tab strip, or onto a stack itself.
 
+**JS/floorp-tab-overflow-fix.uc.js** - Fixes a random startup bug where the new tab button shows up twice and dragging tabs breaks, with the button sliding into the dragged tab's spot and blocking drops until a restart.
+
 **CSS/floorp-sidebar-resize-fix.uc.css** - Fixes unresizable sidebar when using some default Floorp themes.
 
 # Recommended
