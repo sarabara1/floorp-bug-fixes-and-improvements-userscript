@@ -1,63 +1,16 @@
-# Floorp Tab Stack Improvements 
-The tab stack implementation leaves a lot to be desired. They're clunky and frustrating to use. With the help of ~~vibecoding~~ Agentic Engineering I've created a set of userscripts (and a few optional stylesheets) to make tab stacks practical. The end goal is to make tab stacks as seamless and practical as global tabs, like Vivaldi. **The scripts and stylesheets are modular and self-contained, pick and choose what to add.**
+# Floorp Bug Fixes & Improvements
 
-# Bug Fixes
+The browser is buggy and the tab stack implementation leaves a lot to be desired. They're clunky and frustrating to use. This script aims to fix bugs, improve stacks, and add useful features.
 
-**JS/stacktab-general-fixes.uc.js** - Fixes tab context menu entries showing only their icons, with no text, when the browser starts on a stack tab. Fixes a second window sometimes opening with its stacks turned into plain tab groups and no option to change them back.
+It has a settings page for turning each feature one on or off. Open it from **Tools → Floorp Bug Fixes & Improvements**, by right-clicking the tab bar, or by using the toolbar button you can add from **Customize Toolbar**. Changes apply right away, no restart needed.
 
-**JS/floorp-tab-and-file-drag-fix.uc.js** - Highly recommended. Fixes the dragging of stacks and tabs on the global tab bar. Tabs and stacks can be moved around smoothly without ordering and merge issues. Fixes tabs being merged with stacks when placed after it. Fixes stack tabs so they can be placed between stacks. Tabs dragged in from other windows can be placed between stacks or dropped on a stack to join it. Allows you to drop links, text and files onto a stack's tab strip, or onto a stack itself.
-
-**JS/floorp-tab-overflow-fix.uc.js** - Fixes a random startup bug where the new tab button shows up twice and dragging tabs breaks, with the button sliding into the dragged tab's spot and blocking drops until a restart.
-
-**CSS/floorp-sidebar-resize-fix.uc.css** - Fixes unresizable sidebar when using some default Floorp themes.
-
-# Recommended
-
-**JS/stacktab-general-improvements.uc.js** - Makes stacks and stack tabs look and act more like global tabs. Shows the container color under stack tabs, adds the audio button with click to mute/unmute, shows the loading animation on loading stack tabs, moves the close button to the right side, removes the pointer cursor from stacks, remembers each stack's active tab across restarts, and closing or unloading a tab will prefer to switch to the left. It keeps you in its stack, group, or the global tabs whenever possible. Only when it was the last tab it will go to the nearest loaded tab elsewhere, and a neighbouring stack or group opens on its active tab instead of the "nearest".
-
-**JS/stacktab-mouse-improvements.uc.js** - Context-aware middle click on an empty tab bar space to open a new tab. New tabs will open in the stack or global tabs depending on where you click.
-
-**JS/stacktab-hotkey-opens-in-stack.uc.js** - Makes the new tab hotkey & gesture context-aware. New tabs are opened in the currently active stack or in the global tab area, depending on which you're using.
-
-**JS/stacktab-inline-newtab-button.uc.js** - Moves the stack's new tab button to the right end of your tabs just like in the global area. It will snap to the window when the tabs overflow like global tabs.
-
-**JS/stacktab-overflow-scroll-speed.uc.js** - Scrolling overflowed tabs within a stack was frustratingly slow. This script makes scrolling behave like the global tabs.
-
-**JS/stacktab-drag-edge-scroll.uc.js** - Allows stack area to auto-scroll while dragging tabs to the edge. Also adds continuous scroll while holding left click on the arrows.
-
-**JS/stacktab-multiselect.uc.js** - Allows selecting multiple tabs from stacks. Useful with stacktab-move-to-group-menu.uc.js and stacktab-auto-title.uc.js.
-
-**JS/stacktab-move-to-group-menu.uc.js** - Enables the "Add Tab to Group" option to stack tabs.
-
-**JS/stacktab-hover-preview.uc.js** - Replaces the tooltip with hover previews for stack tabs.
- 
-**JS/stacktab-newtab-expand-animation.uc.js** - Adds the opening animation to stack tabs. Purely cosmetic but adds missing polish.
-
-# Optional Features
-
-**JS/stacktab-auto-title.uc.js** - When you create a stack the "Manage Stack" options won't automatically appear. Unnamed stacks show the title and icon of their active tab. You can still name a stack manually, and clearing its name brings the auto-title back. Adds White to the colours you can pick for stacks and groups, and the default is chosen based on your theme. You can change the color without losing the auto-title. Useful with stacktab-multiselect.uc.js and stacktab-move-to-group-menu.uc.js
-
-**JS/stacktab-close-confirm.uc.js** - Adds a dialog when closing a stack or group if it contains multiple tabs just like windows if "Ask before closing multiple tabs" is enabled in your settings.
-
-**JS/stacktab-unload-context-menu-item.uc.js** - Adds a context menu item for stacks and groups to unload the tabs they contain.
-
-**JS/stacktab-close-last-becomes-newtab.uc.js** - Makes closing the last tab in a stack switch to a new tab page instead of removing the stack. It still allows the stack to be closed on the stack handle itself. This mimics global window behavior. Useful for people who like to keep long-standing stacks and don't want to be careful about accidentally closing one.
-
-**CSS/stacktab-auto-title-border.uc.css** - Gives stacks auto-titled by stacktab-auto-title.uc.js a border in your theme's text colour (light on dark themes, dark on light ones), so they stand out from stacks you've named.
-
-**JS/floorp-workspaces-scroll-switch.uc.js** - Scroll over the workspaces button to quickly switch between them.
-
-**JS/floorp-about-page-singletons.uc.js** - This is the odd one out. It makes the Floorp hub a singleton like the rest of the about: pages. This makes them open in the global tabs and the browser will prefer to switch to existing hubs instead of opening a new one. Simply adds cohesion with the rest of Firefox.
-
-**JS/floorp-tab-marks.uc.js** - Adds a "Mark Tab" context menu entry to tabs, global and in stacks, that allows you to pick a color so you can keep track of them. Works on multiple selected tabs and persists across restarts.
-
-**CSS/stackktab-compact-stacks.uc.css** - Makes stacks a bit more compact, between the width of a group and normal tab. Great if you like to have a bunch of assorted stacks.
-
-**CSS/stacktab-auto-title-full-width.uc.css** - Use with stackktab-compact-stacks.uc.css and stacktab-auto-title.uc.js. Keeps auto-titled stacks the full width of a normal tab so they match your tabs, while named stacks stay compact. They still compress with your tabs when the tab bar fills up.
+- Bug fixes and the recommended improvements are on by default, the optional features will need to be enabled manually.
+- If a Floorp update breaks a feature, only that feature stops. The settings page marks it *Failed to load*, *Unavailable* or *Errors*, shows the error, and has *Try again* and *Copy diagnostics* buttons. The menu entries also show how many features have problems.
+- It checks GitHub for a newer version every 12 hours (you can turn that off, or check now, at the top of the settings page). When there is one, the settings page says so with a link to get it, and the menu entries show "(Update available)". It only tells you; replacing the file is up to you.
 
 # Installation
 
-The scripts run through [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig), a small loader for Firefox-based browsers. Then add or remove whichever scripts and styles you'd like.
+The script runs through [fx-autoconfig](https://github.com/MrOtherGuy/fx-autoconfig), a small loader for Firefox-based browsers.
 
 ### 1. Install fx-autoconfig
 
@@ -82,17 +35,14 @@ You should end up with `config.js` next to the Floorp executable and `config-pre
 └── utils/
 ```
 
-### 2. Add the scripts you want
+### 2. Add the script
 
-- `.uc.js` files from this repo's `JS` folder go in `chrome/JS/`
-- `.uc.css` files from this repo's `CSS` folder go in `chrome/CSS/`
-
-Every file is self-contained, so pick only what you want. A few are made to work together; their descriptions above say so.
+- Copy the `floorp-bug-fixes-and-improvements.uc.js` file from this repo's `JS` folder to your Floorp profiles's `chrome/JS/` folder.
 
 ### 3. Restart Floorp
 
-Open `about:support` and click **Clear startup cache…** — it asks to restart Floorp. Do this every time you add, remove or update a script, or the browser may keep running the old version.
+Open the hamburger menu and click **Restart > Restart with Cache Clear**. Do this every time you add, remove, or update the script, or the browser may keep running the old version.
 
 ### Removing a script
 
-Delete it from `chrome/JS/` or `chrome/CSS/` and clear the startup cache again.
+Delete the script from `chrome/JS/` and clear restart with the cache clear again.
