@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.0.0
+// @version        1.0.1
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -50,10 +50,34 @@
     return;
   }
 
-  // Keep in step with @version in the header: the update check compares the
-  // @version of the copy on GitHub with this.
-  const VERSION = "1.0.0";
   const LOG = "[FBFI]";
+  // This file's version: the @version line in the header above, as
+  // fx-autoconfig read it. The update check compares it with the @version of
+  // the copy on GitHub, so that line is the only one to change for a release.
+  // Found by this file's name, or by its @name if the file was renamed. Empty
+  // if the loader can't say (the update check then offers nothing).
+  const VERSION = (() => {
+    const leaf = (url) => String(url ?? "").split(" -> ").pop().split(/[?#]/)[0].split("/").pop();
+    try {
+      let scripts;
+      try {
+        scripts = ChromeUtils.importESModule("chrome://userchromejs/content/uc_api.sys.mjs").Scripts;
+      } catch (e) {
+        scripts = window._ucUtils; // older loaders
+      }
+      const all = scripts?.getScriptData?.() ?? [];
+      const own = leaf(new Error().fileName);
+      const info = all.find(s => s?.filename === own) ??
+        all.find(s => s?.name?.trim() === "floorp-bug-fixes-and-improvements.uc.js");
+      const version = info?.version?.trim();
+      if (version) return version;
+    } catch (e) {
+      console.warn(LOG, "couldn't read this file's version from fx-autoconfig", e);
+      return "";
+    }
+    console.warn(LOG, "fx-autoconfig doesn't list this file's version; update checks won't offer updates");
+    return "";
+  })();
   const PREF_ROOT = "uc.floorp-improvements.";
   const PREF_FEATURE = PREF_ROOT + "feature.";
   const PREF_PAUSED = PREF_ROOT + "paused";
@@ -5378,7 +5402,7 @@
     const appVersion = String(window.AppConstants?.MOZ_APP_VERSION ?? app.version ?? "");
     const floorp = appVersion.includes("@") ? appVersion.split("@")[0] : "";
     return {
-      script: VERSION,
+      script: VERSION || "unknown",
       floorp,
       firefox: app.platformVersion,
       os: app.OS,
@@ -5432,14 +5456,15 @@
 
   // ---- update check ----
   // Reads the @version line at the top of this file as published on GitHub
-  // (only the first few KB) and compares it with VERSION. Results are kept in
-  // prefs, so every window shares them; their pref observer redraws the menu
-  // labels and the settings page. An automatic check runs when the last one is
+  // (only the first few KB) and compares it with VERSION (this file's own
+  // @version, as fx-autoconfig read it). Results are kept in prefs, so every
+  // window shares them; their pref observer redraws the menu labels and the
+  // settings page. An automatic check runs when the last one is
   // more than CHECK_EVERY old (looked at every half hour); the first window to
   // start one claims it by writing the time, so the others skip.
   const Updates = (() => {
-    const REPO = "sarabara1/floorp-tab-stack-improvements";
-    const FILE = "Unified/floorp-bug-fixes-and-improvements.uc.js";
+    const REPO = "sarabara1/floorp-bug-fixes-and-improvements-userscript";
+    const FILE = "JS/floorp-bug-fixes-and-improvements.uc.js";
     const RAW_URL = `https://raw.githubusercontent.com/${REPO}/main/${FILE}`;
     const PAGE_URL = `https://github.com/${REPO}/blob/main/${FILE}`;
     const CHECK_EVERY = 12 * 60 * 60; // seconds
@@ -5485,7 +5510,7 @@
         latest,
         error: getString(PREF.error),
         checking,
-        available: !!latest && compare(latest, VERSION) > 0,
+        available: !!latest && !!VERSION && compare(latest, VERSION) > 0,
       };
     }
 
@@ -6474,6 +6499,9 @@
       let tone = "";
       if (u.checking) {
         text = "Checking for updates…";
+      } else if (!VERSION) {
+        text = "Can't check for updates: fx-autoconfig didn't report this file's version";
+        tone = "bad";
       } else if (u.available) {
         text = `Version ${u.latest} is available`;
         tone = "info";
@@ -6746,7 +6774,7 @@
     const problems = features.filter(f => f.hasProblem)
       .map(f => `${f.id} (${STATUS_TEXT[f.status]}: ${f.reason || f.errors.at(-1)?.message || ""})`);
     const skipped = features.filter(f => f.status === STATUS.SKIPPED).map(f => f.id);
-    console.log(`${LOG} ${VERSION} running: ${c.on} on, ${c.off} off` +
+    console.log(`${LOG} ${VERSION || "(version unknown)"} running: ${c.on} on, ${c.off} off` +
       (skipped.length ? `; skipped (old scripts installed): ${skipped.join(", ")}` : "") +
       (problems.length ? `; problems: ${problems.join("; ")}` : ""));
   }
