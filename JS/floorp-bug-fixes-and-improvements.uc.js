@@ -3369,15 +3369,17 @@
       const isInline = (btn) => !!document.getElementById("floorp-stack-items")?.contains(btn);
 
       // Floorp's button opens a tab on `click` for every mouse button.
-      // Right-click does nothing. Middle-click on the inline button is left to
-      // the "Middle-click for a new tab" feature's auxclick (the button now
-      // sits in the stack's empty space), so exactly one tab opens; no
-      // preventDefault, or auxclick wouldn't fire.
+      // Right-click doesn't: its click is kept from the button with
+      // stopPropagation only, because on Windows a cancelled right-button
+      // click means no contextmenu event at all (no container menu).
+      // Middle-click on the inline button is left to the "Middle-click for a
+      // new tab" feature's auxclick (the button now sits in the stack's empty
+      // space), so exactly one tab opens; no preventDefault, or auxclick
+      // wouldn't fire.
       ctx.listen(window, "click", (e) => {
         const btn = btnOf(e);
         if (!btn) return;
         if (e.button === 2) {
-          e.preventDefault();
           e.stopPropagation();
           return;
         }
@@ -3389,16 +3391,160 @@
         if (e.button === 0 || e.button === 1) ctx.timeout(U.focusUrlbar);
       }, true);
 
-      const swallowRight = (e) => {
-        if ((e.type === "contextmenu" || e.button === 2) && btnOf(e)) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      };
-      ctx.listen(window, "auxclick", swallowRight, true);
-      ctx.listen(window, "contextmenu", swallowRight, true);
+      // The toolbar's own context menu stays away from the button. The
+      // right-button auxclick is only stopped, like the click above.
+      ctx.listen(window, "auxclick", (e) => {
+        if (e.button === 2 && btnOf(e)) e.stopPropagation();
+      }, true);
+      ctx.listen(window, "contextmenu", (e) => {
+        if (!btnOf(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+      }, true);
 
       schedule();
+    },
+  });
+
+  defineFeature({
+    id: "stack-newtab-containers",
+    category: "stacks",
+    name: "Container menu on the stack + button",
+    description: "Right-click a stack's + button, or hold it down, to open a new tab in a container, like the main tab bar's + button. If Firefox is set to show the container menu on a left-click, that works too. The tab opens in the stack. Only when containers are turned on in Settings.",
+    default: true,
+    init(ctx) {
+      // Firefox's + buttons open a menu filled by createUserContextMenu, whose
+      // items run Browser:NewUserContextTab. That opens the tab through
+      // openTrustedLinkIn, which takes no group, so the tab would land at the
+      // end of the tab bar. The stack's + gets the same menu, and the addTab
+      // its command makes gets the stack as its group, with the tab at the
+      // stack's end like Floorp's own +. Firefox still opens the page, so the
+      // new tab URL, selection and address bar focus are its own.
+      const COMMAND = "Browser:NewUserContextTab";
+      ctx.require(typeof window.createUserContextMenu === "function",
+        "Firefox's container menu (createUserContextMenu) is missing");
+      const popupset = ctx.require(document.getElementById("mainPopupSet"), "the main popup set is missing");
+
+      // The same conditions Firefox uses for its + buttons.
+      const containersOn = () => U.prefBool("privacy.userContext.enabled", false) &&
+        !window.PrivateBrowsingUtils?.isWindowPrivate(window);
+      const btnOf = (e) => e.target?.closest?.("#floorp-stack-newtab");
+
+      const popup = ctx.track(document.createXULElement("menupopup"));
+      popup.id = "uc-stack-newtab-container-popup";
+      popup.className = "new-tab-popup";
+      popupset.appendChild(popup);
+      popup.addEventListener("popupshowing", ctx.guard((e) => {
+        if (e.target !== popup) return;
+        window.createUserContextMenu(e, {
+          useAccessKeys: false,
+          showDefaultTab: true,
+          containerSource: "new_tab_button",
+        });
+      }, "filling the container menu"));
+
+      // Firefox's ways into the menu: right-click, holding the button down,
+      // or a plain left-click when this pref makes the + a menu button.
+      const LEFT_CLICK_PREF = "privacy.userContext.newTabContainerOnLeftClick.enabled";
+      const HOLD_MS = 500; // Firefox's click-and-hold delay
+
+      let menuStack = null; // the stack whose + opened the menu
+      // At the pointer for a right-click; below the button otherwise, like
+      // Firefox's menu button.
+      function openMenu(btn, e) {
+        const group = U.activeStack();
+        if (!group) return false;
+        menuStack = group;
+        if (e?.type === "contextmenu") popup.openPopupAtScreen(e.screenX, e.screenY, true, e);
+        else popup.openPopup(btn, "after_end", 0, 0, false, false);
+        return true;
+      }
+
+      ctx.listen(window, "contextmenu", (e) => {
+        const btn = btnOf(e);
+        if (!btn || !containersOn() || !openMenu(btn, e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+      }, true);
+
+      // Only real presses: new-tab-shortcut-in-stack opens stack tabs by
+      // clicking this button from code, and that must still open a tab.
+      const realPress = (e) => e.mozInputSource !== MouseEvent.MOZ_SOURCE_UNKNOWN;
+      let holdBtn = null;
+      let holdTimer = 0;
+      let pressOpened = false; // the menu opened during this press
+      function cancelHold() {
+        if (holdTimer) ctx.clearTimeout(holdTimer);
+        holdTimer = 0;
+        holdBtn = null;
+      }
+      function openFromPress(btn) {
+        cancelHold();
+        if (openMenu(btn)) pressOpened = true;
+      }
+
+      ctx.listen(window, "mousedown", (e) => {
+        cancelHold();
+        pressOpened = false;
+        const btn = btnOf(e);
+        if (!btn || e.button !== 0 || !realPress(e) || !containersOn() || popup.state !== "closed") return;
+        if (U.prefBool(LEFT_CLICK_PREF, false)) {
+          e.preventDefault();
+          openFromPress(btn);
+        } else {
+          holdBtn = btn;
+          holdTimer = ctx.timeout(() => openFromPress(btn), HOLD_MS);
+        }
+      }, true);
+
+      // Letting go before the delay is an ordinary click. Dragging down off
+      // the button opens the menu at once; off any other side cancels.
+      ctx.listen(window, "mouseup", () => {
+        cancelHold();
+        if (pressOpened) ctx.timeout(() => { pressOpened = false; }); // after this press's click
+      }, true);
+      ctx.listen(window, "mouseout", (e) => {
+        if (!holdBtn || !holdBtn.contains(e.target) || holdBtn.contains(e.relatedTarget)) return;
+        const r = holdBtn.getBoundingClientRect();
+        if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.bottom) openFromPress(holdBtn);
+        else cancelHold();
+      }, true);
+
+      // The click ending a press that opened the menu isn't a + click: it
+      // would open a tab (Floorp) and focus the address bar
+      // (inline-stack-newtab-button), so it goes before those and stops them.
+      ctx.listen(window, "click", (e) => {
+        if (e.button !== 0 || !pressOpened || !realPress(e) || !btnOf(e)) return;
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      }, { capture: true, priority: -1 });
+
+      // Floorp's + opens a tab on a click with any button; a right-click
+      // shows the menu instead. Only stopPropagation: on Windows, cancelling
+      // the right-button click (or the release) means Gecko never sends the
+      // contextmenu event this menu opens from.
+      const swallowRight = (e) => {
+        if (e.button === 2 && btnOf(e) && containersOn()) e.stopPropagation();
+      };
+      ctx.listen(window, "click", swallowRight, true);
+      ctx.listen(window, "auxclick", swallowRight, true);
+
+      // The command arrives at the <command> element, with the menu item as
+      // its source event's target.
+      let pending = null;
+      ctx.listen(window, "command", (e) => {
+        const item = e.target?.id === COMMAND ? e.sourceEvent?.target : e.target;
+        if (!item?.hasAttribute?.("data-usercontextid") || !popup.contains(item)) return;
+        pending = menuStack;
+        ctx.timeout(() => { pending = null; });
+      }, true);
+
+      ctx.hook(gBrowser, "addTab", function (next, uri, opts, ...rest) {
+        const group = pending;
+        pending = null;
+        if (!group?.isConnected || opts?.tabGroup || opts?.pinned) return next(uri, opts, ...rest);
+        return next(uri, { ...opts, tabGroup: group, tabIndex: gBrowser.tabs.length }, ...rest);
+      });
     },
   });
 
