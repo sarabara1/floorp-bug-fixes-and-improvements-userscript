@@ -52,6 +52,7 @@ These make stacks and the tabs inside them look and behave like normal tabs.
 - **Bookmarks open in the stack**: bookmarks and history entries opened in a new tab (middle-click, Ctrl+click, Open in New Tab, or a whole folder) go in the stack you're using.
   - *Also in tab groups*: the same for tab groups.
 - **Stack + button beside the tabs**: a stack's new tab button sits at the end of its tabs, like on the main tab bar, and moves to the edge when the tabs overflow.
+- **Container menu on the stack + button**: right-click a stack's + button, or hold it down, to open a new tab in a container, like the main tab bar's + button. If Firefox is set to show the container menu on a left-click, that works too. Only when containers are turned on.
 - **Middle-click the main + for a normal tab**: middle-clicking the main tab bar's + opens a normal tab at the end, instead of a tab in the active stack.
 - **Faster wheel scrolling**: scrolling a stack's overflowing tabs with the mouse wheel is as fast and smooth as on the main tab bar.
 - **Auto-scroll while dragging**: a stack's tabs scroll when you drag a tab to the edge.
