@@ -4246,6 +4246,132 @@
     },
   });
 
+  defineFeature({
+    id: "stack-scroll-to-tab",
+    category: "stacks",
+    name: "Keep the current tab in view",
+    description: "When a stack has more tabs than fit, the stack's tabs scroll to show the tab you switch to, including after closing a tab, and to new tabs, like the main tab bar. A tab opened in the background is only scrolled to if the tab you're on stays in view.",
+    default: true,
+    init(ctx) {
+      // Firefox's rules for the main tab bar (tabs.js), which Floorp's stack
+      // bar doesn't follow (it only scrolls after a drop):
+      // - _handleTabSelect / #ensureTabIsVisible: the selected tab is scrolled
+      //   into view on every TabSelect (smooth), and instantly when the strip
+      //   is resized or starts overflowing.
+      // - _handleNewTab, once a new tab has finished opening: a selected one is
+      //   scrolled into view; a background one (_notifyBackgroundTab) only with
+      //   smooth scrolling on and not for session restore's
+      //   (skipbackgroundnotify), and only as far as the selected tab stays
+      //   visible: both when they fit, otherwise the selected tab at the start.
+      // Not copied: hovering a partly hidden selected tab scrolls it into view
+      // in Firefox, but Floorp turns that off on the main strip once you've
+      // scrolled it yourself, and it would fight scrolling the stack bar.
+      const MAX_WAIT_MS = 1500; // for the stack bar to show the tab
+      const SETTLE_FRAMES = 2;  // after it has grown open (the + may move)
+      const smooth = () => U.prefBool("toolkit.scrollbox.smoothScroll", true);
+      let opened = null;   // the latest new tab: { tab, at, settle }
+      let selected = null; // the latest selection: { tab, at, settle, instant }
+
+      // The stack bar's view and the proxy's box, when the bar overflows and
+      // shows this proxy.
+      function geometry(proxy) {
+        const items = document.getElementById("floorp-stack-items");
+        const scroller = document.getElementById("floorp-stack-scroller");
+        if (!items?.contains(proxy) || !scroller || scroller.scrollWidth - scroller.clientWidth <= 1) return null;
+        return { items, scroller, view: scroller.getBoundingClientRect(), r: proxy.getBoundingClientRect() };
+      }
+      const inView = ({ view, r }) => view.left <= r.left && r.right <= view.right;
+      const intoView = ({ view, r }) => (r.left < view.left ? r.left - view.left : r.right - view.right);
+      function scrollBy(scroller, dx, instant) {
+        if (dx) scroller.scrollBy({ left: dx, behavior: instant || !smooth() ? "instant" : "smooth" });
+      }
+
+      function ensureVisible(proxy, instant) {
+        const g = geometry(proxy);
+        if (g && !inView(g)) scrollBy(g.scroller, intoView(g), instant);
+      }
+
+      function notifyBackground(proxy) {
+        const g = geometry(proxy);
+        if (!g || inView(g)) return;
+        const { items, scroller, view, r } = g;
+        const sel = U.proxyOf(gBrowser.selectedTab);
+        const s = items.contains(sel) ? sel.getBoundingClientRect() : null;
+        let dx = intoView(g);
+        if (s && Math.max(r.right - s.left, s.right - r.left) > view.width) {
+          dx = getComputedStyle(scroller).direction === "rtl" ? s.right - view.right : s.left - view.left;
+        }
+        scrollBy(scroller, dx, false);
+      }
+
+      // The proxy once it's shown and has finished growing open; null while
+      // waiting; false to give up.
+      function readyProxy(p) {
+        if (!p.tab.isConnected || p.tab.closing || performance.now() - p.at > MAX_WAIT_MS) return false;
+        const proxy = U.proxyOf(p.tab);
+        if (!proxy || proxy.getAnimations().some(a => a.playState !== "finished") || p.settle-- > 0) return null;
+        return proxy;
+      }
+
+      const check = ctx.throttle(() => {
+        let waiting = false;
+        if (selected) {
+          const proxy = readyProxy(selected);
+          if (proxy === null) {
+            waiting = true;
+          } else {
+            const { tab, instant } = selected;
+            selected = null;
+            if (proxy && tab.selected) ensureVisible(proxy, instant);
+          }
+        }
+        if (opened) {
+          const proxy = readyProxy(opened);
+          if (proxy === null) {
+            waiting = true;
+          } else {
+            const { tab } = opened;
+            opened = null;
+            if (proxy && tab.selected) ensureVisible(proxy, false);
+            else if (proxy && !tab.hasAttribute("skipbackgroundnotify") && smooth()) notifyBackground(proxy);
+          }
+        }
+        if (waiting) check(); // look again next frame
+      }, "scrolling the stack bar to a tab");
+
+      function wantSelected(instant, settle = SETTLE_FRAMES) {
+        const tab = gBrowser.selectedTab;
+        if (!U.stackOf(tab)) return; // not shown in the stack bar
+        selected = { tab, at: performance.now(), settle, instant };
+        check();
+      }
+
+      // The latest new tab wins, as in Firefox. Floorp's + adds the tab to the
+      // stack just after opening it, so the stack is checked later.
+      ctx.listen(gBrowser.tabContainer, "TabOpen", (e) => {
+        if (e.target.pinned) return;
+        opened = { tab: e.target, at: performance.now(), settle: SETTLE_FRAMES };
+        check();
+      });
+      // A closed tab's proxy goes away and a switch to another stack rebuilds
+      // the bar (with that stack's saved scroll position), hence the settle.
+      ctx.listen(gBrowser.tabContainer, "TabSelect", () => wantSelected(false));
+
+      // Resizes of the visible area: the window, or the + moving to the bar's
+      // end when the tabs start to overflow. Re-attached when Floorp rebuilds
+      // the bar (which also fires it once for the new bar).
+      let observed = null;
+      const ro = ctx.resizeObserver(() => wantSelected(true, 0));
+      ctx.watchToolbox(() => {
+        const scroller = document.getElementById("floorp-stack-scroller");
+        if (scroller === observed) return;
+        if (observed) ro.unobserve(observed);
+        if (scroller) ro.observe(scroller);
+        observed = scroller;
+      });
+    },
+  });
+
   // -------------------------------------------------------- Stack Features --
 
   // A stack chip showing its active tab's favicon (and Firefox's loading
