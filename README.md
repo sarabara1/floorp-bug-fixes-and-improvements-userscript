@@ -61,6 +61,7 @@ These make stacks and the tabs inside them look and behave like normal tabs.
 - **Add Tab to Group for stack tabs**: stack tabs get the "Add Tab to Group" menu item, so a tab can go straight into another stack or group.
 - **Hover previews**: hovering a stack tab shows Firefox's tab preview card, following Firefox's own setting. Stack tooltips show just the stack's name.
 - **New tab animation**: new stack tabs grow open like normal tabs, instead of popping in.
+- **Keep the current tab in view**: when a stack has more tabs than fit, its tabs scroll to show the tab you switch to (including after closing a tab) and new tabs, like the main tab bar. A tab opened in the background is only scrolled to if the tab you're on stays in view.
 
 ### Stack features (off by default)
 
