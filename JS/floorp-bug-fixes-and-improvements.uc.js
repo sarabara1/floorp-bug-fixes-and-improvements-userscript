@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.0.1
+// @version        1.1.1
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -122,7 +122,7 @@
     {
       id: "fixes",
       name: "Bug Fixes",
-      description: "Fixes for bugs in Floorp: tab stacks, the tab bar and the sidebar.",
+      description: "Fixes for bugs in Floorp's tab stacks, tab bar, workspaces and sidebar.",
     },
     {
       id: "stacks",
@@ -1283,7 +1283,7 @@
     id: "drag-and-drop",
     category: "fixes",
     name: "Stack-aware drag and drop",
-    description: "Tabs and stacks move around the tab bar smoothly without merging into stacks by accident. Tabs can go between stacks, tabs from other windows can join a stack, and links, text and files can be dropped onto a stack or the tabs inside it.",
+    description: "Tabs and stacks move around the tab bar smoothly without accidentally merging into stacks. Tabs can move between stacks, tabs from other windows can join a stack, and links, text and files can be dropped onto a stack or its tabs.",
     default: true,
     standalone: ["floorp-tab-and-file-drag-fix.uc.js"],
     init(ctx) {
@@ -2080,7 +2080,7 @@
     id: "tab-overflow",
     category: "fixes",
     name: "Double new tab button",
-    description: "Fixes a random startup bug where the new tab button shows up twice and dragging tabs breaks until a restart.",
+    description: "Fixes a random startup bug where the new tab button appears twice and dragging tabs stops working.",
     default: true,
     standalone: ["floorp-tab-overflow-fix.uc.js"],
     init(ctx) {
@@ -2119,7 +2119,7 @@
     id: "context-menu-labels",
     category: "fixes",
     name: "Tab menu text on startup",
-    description: "Fixes the tab context menu showing only icons, with no text, when the browser starts on a stack tab.",
+    description: "Fixes the tab menu showing only icons, with no text, when the browser starts on a stack tab.",
     default: true,
     standalone: ["stacktab-general-fixes.uc.js"],
     init(ctx) {
@@ -2135,7 +2135,7 @@
     id: "stacks-in-new-windows",
     category: "fixes",
     name: "Stacks in new windows",
-    description: "Fixes a second window sometimes opening with its stacks turned into plain tab groups and no way to change them back.",
+    description: "Fixes new windows sometimes opening with their stacks turned into plain tab groups.",
     default: true,
     standalone: ["stacktab-general-fixes.uc.js"],
     init(ctx) {
@@ -2191,7 +2191,7 @@
     id: "sidebar-width",
     category: "fixes",
     name: "Resizable sidebar",
-    description: "Lets the sidebar be made much wider on Floorp themes that restrict it.",
+    description: "Lets the sidebar be made much wider on themes that limit its width.",
     default: true,
     standalone: ["floorp-sidebar-resize-fix.uc.css"],
     init(ctx) {
@@ -2207,7 +2207,7 @@
     id: "workspace-split-stacks",
     category: "fixes",
     name: "Stacks copied into another workspace",
-    description: "Moving one tab of a stack or group to another workspace, or reopening a closed tab, could make a stack from one workspace show up in another as a linked copy. Now a moved tab goes on its own as a normal tab, and a reopened tab stays out of other workspaces' stacks. Stacks that are already split this way become two separate stacks, one in each workspace.",
+    description: "Fixes stacks showing up in two workspaces at once after one of their tabs was moved to another workspace or reopened. A moved tab now leaves its stack, a reopened tab stays out of other workspaces' stacks, and stacks already split this way become one stack in each workspace.",
     default: true,
     init(ctx) {
       // Floorp moves a tab to a workspace by changing its workspace attribute,
@@ -2430,7 +2430,7 @@
     id: "reopen-in-workspace",
     category: "fixes",
     name: "Reopened tabs go back to their workspace",
-    description: "Reopening a closed tab (Ctrl+Shift+T or Recently Closed Tabs) brings it back to the workspace it was closed in, and its stack if it was in one, and switches to that workspace. Floorp put it in whichever workspace you were in, outside its stack.",
+    description: "Reopening a closed tab brings it back to the workspace it was closed in, and into its stack, and switches to that workspace.",
     default: true,
     init(ctx) {
       // Floorp saves a tab's workspace with its closed-tab data, but only puts
@@ -2483,6 +2483,71 @@
     },
   });
 
+  defineFeature({
+    id: "moved-stack-keeps-tab",
+    category: "fixes",
+    name: "Moved stacks keep their tab",
+    description: "A stack moved to another window opens on the tab you were using in it, instead of its first or last tab.",
+    default: true,
+    init(ctx) {
+      // Every move to another window goes through gBrowser.adoptTab in the
+      // receiving window: a new tab takes over the old one's page and the old
+      // one closes. A loaded tab's new copy is stamped as used at the time of
+      // the move (tab.js), in order, so a moved stack's last tab looks like
+      // the one you were on, and Floorp, Firefox and this script pick it.
+      // (Unloaded tabs keep their time: SessionStore restores it.) The move
+      // can also select a tab itself: Move to New Window and tearing a stack
+      // off end by closing the new window's blank tab, which selects the
+      // stack's last tab, and Move Group to This Window selects the first
+      // (tab-group select()).
+      // A new window isn't running this script yet when that happens, so the
+      // old window does the work: its TabClose names the new tab
+      // (detail.adoptedBy). The time is copied over at once. When the move is
+      // done, a stack whose selected tab the move picked gets the tab you were
+      // on instead.
+      // The times are read when the first tab of a stack leaves: as each moved
+      // tab closes here, this window selects the next one (close-stays-in-
+      // stack picks the stack neighbour), which would then look just used.
+      let moved = [];
+      const timeBefore = new Map(); // old tab → lastAccessed before the move
+      function finish() {
+        const batch = moved;
+        moved = [];
+        timeBefore.clear();
+        const byStack = new Map();
+        for (const m of batch) {
+          const stack = U.stackOf(m.tab);
+          if (!stack?.isConnected) continue;
+          if (!byStack.has(stack)) byStack.set(stack, []);
+          byStack.get(stack).push(m);
+        }
+        for (const [stack, list] of byStack) {
+          const browser = stack.ownerDocument.defaultView.gBrowser;
+          const picked = list.find(m => m.tab === browser.selectedTab);
+          if (!picked) continue; // the move didn't select a tab of this stack
+          const best = list.reduce((a, b) => (b.last > a.last ? b : a));
+          if (best === picked || !best.tab.isConnected || best.tab.closing) continue;
+          browser.selectedTab = best.tab;
+          picked.tab.updateLastAccessed(picked.last); // only the move selected it
+        }
+      }
+
+      ctx.listen(gBrowser.tabContainer, "TabClose", (e) => {
+        const tab = e.detail?.adoptedBy;
+        if (!tab || tab.closing) return;
+        const old = e.target;
+        if (!timeBefore.has(old)) {
+          // The selected tab reads as now, which is right: it's the one you were on.
+          for (const t of old.group?.tabs ?? [old]) timeBefore.set(t, t.lastAccessed);
+        }
+        const last = timeBefore.get(old);
+        if (!tab.selected) tab.updateLastAccessed(last);
+        if (!moved.length) ctx.timeout(finish);
+        moved.push({ tab, last });
+      });
+    },
+  });
+
   // ---------------------------------------------------- Stack Improvements --
 
   // Stack tabs are proxies that don't carry the real tab's state, so several
@@ -2505,7 +2570,7 @@
     id: "stack-container-line",
     category: "stacks",
     name: "Container colors",
-    description: "Stack tabs in a container show its colored line underneath, like normal tabs.",
+    description: "Stack tabs in a container show the container's colored line, like normal tabs.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -2558,7 +2623,7 @@
     id: "stack-audio-button",
     category: "stacks",
     name: "Audio button",
-    description: "Stack tabs, and stacks themselves, show the speaker button when playing sound. Click it to mute or unmute, like on a normal tab.",
+    description: "Stack tabs and stacks show the speaker button while playing sound. Click it to mute or unmute.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -2763,7 +2828,7 @@
     id: "stack-loading-animation",
     category: "stacks",
     name: "Loading animation",
-    description: "Stack tabs show the loading animation while their page loads, instead of only the favicon.",
+    description: "Stack tabs show the loading animation while their page loads.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -2873,7 +2938,7 @@
     id: "stack-button-layout",
     category: "stacks",
     name: "Normal tab buttons",
-    description: "The close button sits at the right end of stack tabs and stacks, the favicon stays visible on hover, and stacks keep the normal arrow cursor.",
+    description: "Stack tabs and stacks have their close button at the right end, keep their icon visible on hover, and use the normal pointer, like normal tabs.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -2953,7 +3018,7 @@
     id: "stack-remember-tab",
     category: "stacks",
     name: "Remember each stack's tab",
-    description: "Clicking a stack opens the tab you last viewed in it, even after a restart.",
+    description: "Clicking a stack opens the tab you last used in it, even after a restart.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -2980,7 +3045,7 @@
     id: "close-stays-in-stack",
     category: "stacks",
     name: "Stay in the stack when closing tabs",
-    description: "Closing or unloading a tab, or moving it to another workspace, switches to the nearest loaded tab beside it, and stays in its stack, group or the normal tabs unless it was the last one there. When it has to leave, a stack or group you land on opens on the tab you last viewed there.",
+    description: "Closing or unloading a tab, or moving it to another workspace, switches to the nearest loaded tab in the same stack or group, or among the normal tabs. If none is left there, it goes to the nearest one outside, and a stack opens on the tab you last used in it.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -3100,7 +3165,7 @@
     id: "close-prefer-left",
     parent: "close-stays-in-stack",
     name: "Go to the tab on the left",
-    description: "Switches to the tab on the left first. Turn off to switch to the tab on the right first instead.",
+    description: "Looks for the next tab on the left first. Turn off to look on the right first.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init() {
@@ -3113,7 +3178,7 @@
     id: "middle-click-new-tab",
     category: "stacks",
     name: "Middle-click for a new tab",
-    description: "Middle-click empty space on the tab bar to open a new tab. Empty space in a stack opens it in that stack; anywhere else opens a normal tab.",
+    description: "Middle-click empty space on the tab bar to open a new tab, or empty space in a stack to open one in that stack.",
     default: true,
     standalone: ["stacktab-mouse-improvements.uc.js"],
     init(ctx) {
@@ -3177,7 +3242,7 @@
     id: "new-tab-shortcut-in-stack",
     category: "stacks",
     name: "Ctrl+T opens in the stack",
-    description: "The new tab shortcut and mouse gesture open the tab in the stack you're using, or with the normal tabs if you're not in a stack. The + buttons are unchanged.",
+    description: "Ctrl+T and the new tab mouse gesture open the tab where you are: in the stack you're using, or with your normal tabs when you're not in one.",
     default: true,
     standalone: ["stacktab-hotkey-opens-in-stack.uc.js"],
     init(ctx) {
@@ -3253,7 +3318,7 @@
     id: "new-tab-shortcut-in-group",
     parent: "new-tab-shortcut-in-stack",
     name: "Also in tab groups",
-    description: "In a tab group, the new tab shortcut and mouse gesture open the tab at the end of that group instead of after all your tabs.",
+    description: "The same for tab groups: in a tab group, Ctrl+T and the mouse gesture open the tab in that group.",
     default: true,
     init(ctx) {
       // Firefox still opens the tab itself (its new tab page, address bar
@@ -3284,7 +3349,7 @@
     id: "bookmarks-in-stack",
     category: "stacks",
     name: "Bookmarks open in the stack",
-    description: "A bookmark or history entry opened in a new tab (middle-click, Ctrl+click, Open in New Tab, or a whole folder) goes in the stack you're using, or with the normal tabs if you're not in a stack.",
+    description: "Bookmarks and history entries opened in new tabs, including whole folders, go into the stack you're using.",
     default: true,
     init(ctx) {
       // Firefox opens these at the end of the tab bar, outside every stack.
@@ -3306,7 +3371,7 @@
     id: "bookmarks-in-group",
     parent: "bookmarks-in-stack",
     name: "Also in tab groups",
-    description: "In a tab group, bookmarks opened in a new tab go in that group instead of after all your tabs.",
+    description: "Bookmarks opened in new tabs also go into the tab group you're using.",
     default: true,
     init(ctx) {
       // The same as the parent, for plain Firefox groups.
@@ -3323,7 +3388,7 @@
     id: "inline-stack-newtab-button",
     category: "stacks",
     name: "Stack + button beside the tabs",
-    description: "Moves a stack's new tab button to the end of its tabs, like the main tab bar. When the tabs overflow it moves to the edge so it stays visible.",
+    description: "A stack's + button sits right after its tabs, like on the main tab bar, and moves to the edge when the tabs don't fit.",
     default: true,
     standalone: ["stacktab-inline-newtab-button.uc.js"],
     init(ctx) {
@@ -3410,7 +3475,7 @@
     id: "stack-newtab-containers",
     category: "stacks",
     name: "Container menu on the stack + button",
-    description: "Right-click a stack's + button, or hold it down, to open a new tab in a container, like the main tab bar's + button. If Firefox is set to show the container menu on a left-click, that works too. The tab opens in the stack. Only when containers are turned on in Settings.",
+    description: "Right-click or hold a stack's + button to open a new tab in a container in that stack, like the main tab bar's + button. If containers are set to open on a left-click, a left-click works too.",
     default: true,
     init(ctx) {
       // Firefox's + buttons open a menu filled by createUserContextMenu, whose
@@ -3552,7 +3617,7 @@
     id: "global-plus-middle-click",
     category: "stacks",
     name: "Middle-click the main + for a normal tab",
-    description: "Middle-clicking the main tab bar's + button opens a normal tab at the end, instead of a tab in the active stack.",
+    description: "Middle-clicking the main tab bar's + button opens a normal tab at the end of the tab bar.",
     default: true,
     standalone: ["stacktab-inline-newtab-button.uc.js"],
     init(ctx) {
@@ -3584,7 +3649,7 @@
     id: "stack-wheel-scroll",
     category: "stacks",
     name: "Faster wheel scrolling",
-    description: "Scrolling a stack's overflowing tabs with the mouse wheel moves as fast and smoothly as the main tab bar.",
+    description: "Scrolling a stack's tabs with the mouse wheel is as fast and smooth as on the main tab bar.",
     default: true,
     standalone: ["stacktab-overflow-scroll-speed.uc.js"],
     init(ctx) {
@@ -3635,7 +3700,7 @@
     id: "stack-edge-scroll",
     category: "stacks",
     name: "Auto-scroll while dragging",
-    description: "A stack's tabs scroll when you drag a tab to the edge, like the main tab bar.",
+    description: "A stack's tabs scroll when you drag something to their edge, like the main tab bar.",
     default: true,
     standalone: ["stacktab-drag-edge-scroll.uc.js"],
     init(ctx) {
@@ -3726,7 +3791,7 @@
     id: "stack-arrow-hold-scroll",
     parent: "stack-edge-scroll",
     name: "Hold the arrows to scroll",
-    description: "Holding down one of a stack's scroll arrows keeps scrolling, with a short glide when you let go, like the main tab bar.",
+    description: "Holding down a stack's scroll arrow keeps scrolling, like the main tab bar.",
     default: true,
     standalone: ["stacktab-drag-edge-scroll.uc.js"],
     init(ctx) {
@@ -3816,7 +3881,7 @@
     id: "stack-multiselect",
     category: "stacks",
     name: "Select several stack tabs",
-    description: "Ctrl-click and Shift-click select several stack tabs, like normal tabs. Everything that works on selected tabs, including dragging and the tab menu, then works on all of them.",
+    description: "Ctrl-click and Shift-click select several stack tabs at once. Dragging, the tab menu and anything else that works on selected tabs then applies to all of them.",
     default: true,
     standalone: ["stacktab-multiselect.uc.js"],
     init(ctx) {
@@ -3993,7 +4058,7 @@
     id: "stack-add-to-group-menu",
     category: "stacks",
     name: "Add Tab to Group for stack tabs",
-    description: "Stack tabs get the \"Add Tab to Group\" menu item, so a tab can go straight into another stack or group. A new group made this way appears after the stack the tab came from.",
+    description: "Stack tabs get the \"Add Tab to Group\" menu item, to move a tab straight into another stack or group. A new group made from a stack tab appears right after its stack.",
     default: true,
     standalone: ["stacktab-move-to-group-menu.uc.js"],
     init(ctx) {
@@ -4053,7 +4118,7 @@
     id: "stack-hover-preview",
     category: "stacks",
     name: "Hover previews",
-    description: "Hovering a stack tab shows Firefox's tab preview card instead of a plain tooltip, following Firefox's own setting. Stack tooltips show just the stack's name.",
+    description: "Hovering a stack tab shows the tab preview card, like normal tabs, and hovering a stack shows just its name.",
     default: true,
     standalone: ["stacktab-hover-preview.uc.js"],
     init(ctx) {
@@ -4168,7 +4233,7 @@
     id: "stack-open-animation",
     category: "stacks",
     name: "New tab animation",
-    description: "New stack tabs grow open like normal tabs do, instead of popping in.",
+    description: "New stack tabs grow open like normal tabs.",
     default: true,
     standalone: ["stacktab-newtab-expand-animation.uc.js"],
     init(ctx) {
@@ -4250,7 +4315,7 @@
     id: "stack-scroll-to-tab",
     category: "stacks",
     name: "Keep the current tab in view",
-    description: "When a stack has more tabs than fit, the stack's tabs scroll to show the tab you switch to, including after closing a tab, and to new tabs, like the main tab bar. A tab opened in the background is only scrolled to if the tab you're on stays in view.",
+    description: "When a stack has more tabs than fit, they scroll to keep the tab you're on in view, including new tabs and the tab you land on after closing one, like the main tab bar.",
     default: true,
     init(ctx) {
       // Firefox's rules for the main tab bar (tabs.js), which Floorp's stack
@@ -4595,7 +4660,7 @@
     id: "stack-auto-title",
     category: "stack-features",
     name: "Auto-title stacks",
-    description: "Unnamed stacks show the title of the tab you're using in them, and new stacks skip the naming popup. Name a stack to turn it off for that stack; clear the name to bring it back.",
+    description: "Unnamed stacks show the title of the tab you're using in them, and new stacks skip the naming popup. Naming a stack shows its name again; clearing the name brings the title back.",
     default: false,
     standalone: ["stacktab-auto-title.uc.js"],
     init(ctx) {
@@ -4728,7 +4793,7 @@
     id: "auto-title-icon",
     parent: "stack-auto-title",
     name: "Show the tab's icon",
-    description: "Auto-titled stacks also show the icon of the tab you're using in them instead of the stack symbol, with the loading animation while it loads.",
+    description: "Also shows that tab's icon, and its loading animation, in place of the stack symbol.",
     default: true,
     standalone: ["stacktab-auto-title.uc.js"],
     init(ctx) {
@@ -4737,32 +4802,10 @@
   });
 
   defineFeature({
-    id: "auto-title-full-width",
-    parent: "stack-auto-title",
-    name: "Full width",
-    description: "With Compact stacks on, auto-titled stacks stay a full tab's width so they match your tabs, while named stacks stay compact.",
-    default: false,
-    requires: ["compact-stacks"],
-    standalone: ["stacktab-auto-title-full-width.uc.css"],
-    init(ctx) {
-      // uc-auto-title is set by Auto-title stacks. The :root prefix outranks
-      // Compact stacks' selectors, which hold auto-titled stacks to 150px.
-      ctx.style(`
-        :root #tabbrowser-tabs tab-group[data-floorp-stack] > .tab-group-label-container:has(> .tab-group-label-hover-highlight > .tab-group-label[uc-auto-title]) {
-          max-width: var(--tab-max-width, 225px);
-        }
-        :root #tabbrowser-tabs tab-group[data-floorp-stack] .tab-group-label-hover-highlight:has(> .tab-group-label[uc-auto-title]) {
-          max-width: var(--tab-max-width, 225px);
-        }
-      `);
-    },
-  });
-
-  defineFeature({
     id: "stack-tab-icons",
     category: "stack-features",
     name: "Tab icons on named stacks",
-    description: "Named stacks show the icon of the tab you're using in them instead of the stack symbol, with the loading animation while it loads. For unnamed stacks, see Auto-title stacks.",
+    description: "Named stacks show the icon of the tab you're using in them, and its loading animation, in place of the stack symbol.",
     default: false,
     init(ctx) {
       // Every chip Auto-title stacks isn't titling (it marks those with
@@ -4775,7 +4818,7 @@
     id: "close-stack-confirm",
     category: "stack-features",
     name: "Confirm closing stacks",
-    description: "Closing a stack or group with more than one tab asks first, like closing a window does when \"Confirm before closing multiple tabs\" is on in Settings.",
+    description: "Asks before closing a stack or group with more than one tab.",
     default: false,
     standalone: ["stacktab-close-confirm.uc.js"],
     init(ctx) {
@@ -4829,7 +4872,7 @@
     id: "unload-stack-menu",
     category: "stack-features",
     name: "Unload Stack menu item",
-    description: "Adds \"Unload Stack\" and \"Unload Group\" to the menu of a stack or group, to unload every tab in it.",
+    description: "Adds \"Unload Stack\" and \"Unload Group\" to a stack's or group's menu, to unload all its tabs.",
     default: false,
     standalone: ["stacktab-unload-context-menu-item.uc.js"],
     init(ctx) {
@@ -4903,7 +4946,7 @@
     id: "stack-workspace-menu",
     category: "stack-features",
     name: "Move Stack to Another Workspace",
-    description: "Adds \"Move Stack to Another Workspace\" and \"Move Group to Another Workspace\" to the menu of a stack or group, to send it with all its tabs to another workspace. You stay in the workspace you're in.",
+    description: "Adds \"Move Stack to Another Workspace\" and \"Move Group to Another Workspace\" to a stack's or group's menu, to send it with all its tabs to another workspace while you stay where you are.",
     default: false,
     init(ctx) {
       // Floorp's own "Move Tab to Another Workspace" only moves tabs. This
@@ -5021,7 +5064,7 @@
     id: "keep-stack-on-last-close",
     category: "stack-features",
     name: "Keep stacks when their last tab closes",
-    description: "Closing the last tab in a stack leaves a new tab page there instead of removing the stack, like closing a window's last tab. Closing the stack itself still works.",
+    description: "Closing the last tab in a stack leaves a new tab page in it, so the stack stays.",
     default: false,
     standalone: ["stacktab-close-last-becomes-newtab.uc.js"],
     init(ctx) {
@@ -5091,7 +5134,7 @@
     id: "theme-stack-colors",
     category: "appearance",
     name: "Theme-matched stack colors",
-    description: "New stacks start white on dark themes and gray on light ones, instead of a random color, and White is added to the colors you can pick for stacks and groups. Any color you pick afterwards sticks. Stacks and groups that were white lose their color while this is off.",
+    description: "New stacks start white on dark themes and gray on light ones, and White is added to the colors for stacks and groups.",
     default: false,
     standalone: ["stacktab-auto-title.uc.js"],
     init(ctx) {
@@ -5196,7 +5239,7 @@
     id: "compact-stacks",
     category: "appearance",
     name: "Compact stacks",
-    description: "Stacks are only as wide as their name (at least 150px), between a group's width and a tab's. Handy if you keep lots of stacks.",
+    description: "Stacks take up less room than normal tabs, so more of them fit in the tab bar. A stack whose name doesn't fit grows to show it, up to a normal tab's width.",
     default: false,
     standalone: ["stackktab-compact-stacks.uc.css"],
     init(ctx) {
@@ -5207,7 +5250,7 @@
       //
       // An auto-titled stack's "name" is a page title, which would almost
       // always reach a full tab's width, so those are held to the compact
-      // 150px. Auto-title stacks' "Full width" sub-setting widens them again.
+      // 150px. The "Full width for auto-titled stacks" sub-setting widens them.
       ctx.style(`
         :root #tabbrowser-tabs tab-group[data-floorp-stack] > .tab-group-label-container {
           max-width: max-content;
@@ -5227,13 +5270,36 @@
     },
   });
 
+  defineFeature({
+    id: "auto-title-full-width",
+    parent: "compact-stacks",
+    name: "Full width for auto-titled stacks",
+    description: "With Auto-title stacks on, auto-titled stacks are as wide as a normal tab, while named stacks stay compact.",
+    default: false,
+    requires: ["stack-auto-title"],
+    standalone: ["stacktab-auto-title-full-width.uc.css"],
+    init(ctx) {
+      // uc-auto-title is set by Auto-title stacks (hence `requires`). The
+      // :root prefix outranks Compact stacks' selectors, which hold
+      // auto-titled stacks to 150px.
+      ctx.style(`
+        :root #tabbrowser-tabs tab-group[data-floorp-stack] > .tab-group-label-container:has(> .tab-group-label-hover-highlight > .tab-group-label[uc-auto-title]) {
+          max-width: var(--tab-max-width, 225px);
+        }
+        :root #tabbrowser-tabs tab-group[data-floorp-stack] .tab-group-label-hover-highlight:has(> .tab-group-label[uc-auto-title]) {
+          max-width: var(--tab-max-width, 225px);
+        }
+      `);
+    },
+  });
+
   // --------------------------------------------------------------- Browser --
 
   defineFeature({
     id: "tab-marks",
     category: "browser",
     name: "Tab marks",
-    description: "Adds \"Mark Tab\" to the tab menu to give tabs (normal or in stacks) a colored border, so they're easy to keep track of. Works on several selected tabs, and marks survive restarts.",
+    description: "Adds \"Mark Tab\" to the tab menu to give tabs, including stack tabs, a colored border so they're easy to find. Works on several selected tabs, and marks are kept after a restart.",
     default: false,
     standalone: ["floorp-tab-marks.uc.js"],
     init(ctx) {
@@ -5334,6 +5400,25 @@
       ctx.listen(window, "SSWindowRestored", applyAll);
       ctx.watchToolbox(scheduleSync);
 
+      // A tab moved to another window is a new tab there (gBrowser.adoptTab).
+      // SessionStore hands it the mark at its TabOpen, but for an unloaded
+      // tab Firefox then restores it from the old tab's state, which no longer
+      // has the mark, and it's lost. The old tab still shows it when it closes
+      // here (the new window may not be running this script yet), so the mark
+      // is put back on the tab that replaced it. Not at once: the old tab
+      // closes before that restore, so after the move (a microtask later,
+      // still ahead of the new window's stack bar sync).
+      ctx.listen(tabs, "TabClose", (e) => {
+        const to = e.detail?.adoptedBy;
+        const color = e.target.getAttribute(ATTR);
+        if (!to || !isColor(color)) return;
+        ctx.microtask(() => {
+          if (!to.isConnected || to.closing) return;
+          if (SessionStore.getCustomTabValue(to, KEY) !== color) SessionStore.setCustomTabValue(to, KEY, color);
+          U.setAttr(to, ATTR, color);
+        });
+      });
+
       // ---- the menu ----
       // Firefox's MenuSectionLayout won't lay out a menu holding items it
       // doesn't know, so the submenu is added after Firefox has set the menu
@@ -5385,7 +5470,7 @@
     id: "tab-marks-confirm-close",
     parent: "tab-marks",
     name: "Ask before closing marked tabs",
-    description: "Closing a marked tab asks first. When you close several tabs at once (a stack, a group, or a selection), you can keep the marked ones and close the rest.",
+    description: "Asks before closing a marked tab. When closing several tabs at once, you can keep the marked ones and close the rest.",
     default: false,
     init(ctx) {
       // One tab closes through removeTab; several, a whole stack or group
@@ -5478,7 +5563,7 @@
     id: "workspace-scroll",
     category: "browser",
     name: "Scroll to switch workspaces",
-    description: "Scroll the mouse wheel over the Workspaces button to switch workspaces. It stops at the first and last one instead of wrapping around.",
+    description: "Scroll the mouse wheel over the Workspaces button to switch workspaces, stopping at the first and last.",
     default: false,
     standalone: ["floorp-workspaces-scroll-switch.uc.js"],
     init(ctx) {
@@ -5542,7 +5627,7 @@
     id: "about-singletons",
     category: "browser",
     name: "One Floorp Hub and Settings tab",
-    description: "Floorp Hub and Firefox Settings open once, with the normal tabs, and switch to the open one instead of opening a duplicate, like the other about: pages.",
+    description: "Floorp Hub and Settings each open in only one tab, with the normal tabs; opening them again switches to that tab.",
     default: false,
     standalone: ["floorp-about-page-singletons.uc.js"],
     init(ctx) {
