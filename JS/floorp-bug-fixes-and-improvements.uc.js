@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.1.1
+// @version        1.2.0
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -4798,6 +4798,82 @@
     standalone: ["stacktab-auto-title.uc.js"],
     init(ctx) {
       StackIcon.run(ctx, (label) => label.hasAttribute("uc-auto-title"), "stack-tab-icons");
+    },
+  });
+
+  defineFeature({
+    id: "link-opens-stack",
+    parent: "stack-auto-title",
+    name: "Links from normal tabs make a stack",
+    description: "Opening a link in a new tab from a normal tab turns that tab and the new one into a stack, titled after the tab you're using.",
+    default: false,
+    init(ctx) {
+      // Firefox records where a tab came from (tab.openerTab: the tab of
+      // openerBrowser for link clicks and pages opening tabs, or the selected
+      // tab for "related" opens such as the context menu's Open Link in New
+      // Tab) and already puts it in the opener's group. So only an opener
+      // outside any group needs a new stack; later links from either tab join
+      // it by themselves. Links carry the page's principal; Ctrl+T, bookmarks,
+      // duplicates and reopened tabs use the system principal, so they're
+      // left out. The stack is unnamed, so Auto-title titles it.
+      ctx.hook(gBrowser, "addTab", function (next, uri, opts, ...rest) {
+        const tab = next(uri, opts, ...rest);
+        const opener = tab?.openerTab;
+        const principal = opts?.triggeringPrincipal;
+        if (!opener || opener === tab || tab.pinned || tab.group || opts?.fromExternal) return tab;
+        if (!principal || principal.isSystemPrincipal) return tab;
+        if (opener.pinned || opener.group || opener.splitview || opener.closing) return tab;
+        if (opener.ownerDocument !== document || !U.prefBool("floorp.tabstacks.enabled", false)) return tab;
+        // After the opening call has finished with the tab.
+        ctx.microtask(() => {
+          if (!tab.isConnected || tab.closing || tab.group || !opener.isConnected || opener.closing) return;
+          if (opener.group) {
+            // Another link from the same tab got there first.
+            if (U.isStack(opener.group)) U.adoptToGroup(tab, opener.group);
+            return;
+          }
+          gBrowser.addTabGroup([opener, tab], { insertBefore: opener });
+        });
+        return tab;
+      });
+    },
+  });
+
+  defineFeature({
+    id: "single-tab-unstack",
+    parent: "stack-auto-title",
+    name: "One-tab stacks become normal tabs",
+    description: "When an auto-titled stack is down to one tab, the stack goes away and that tab stays in its place as a normal tab.",
+    default: false,
+    init(ctx) {
+      // When a tab closes in or leaves an unnamed stack (TabClose; TabUngrouped
+      // for drags out, workspace and window moves) and one tab is left, the
+      // stack is ungrouped a tick later, once the other tab is gone.
+      // group.ungroupTabs() leaves that tab where the stack was. A stack that
+      // starts with one tab stays until it has had more. So does one whose
+      // remaining tab was opened in the same go: Keep stacks when their last
+      // tab closes adds a new tab just before closing a stack's last one.
+      const justOpened = new WeakSet();
+      ctx.listen(gBrowser.tabContainer, "TabOpen", (e) => {
+        justOpened.add(e.target);
+        ctx.timeout(() => justOpened.delete(e.target));
+      });
+      const autoTitled = (group) => !!group?.querySelector?.(".tab-group-label[uc-auto-title]");
+
+      function leaving(tab, group) {
+        if (!U.isStack(group) || !autoTitled(group)) return;
+        const rest = group.tabs.filter(t => t !== tab && !t.closing);
+        if (rest.length !== 1 || justOpened.has(rest[0])) return;
+        const [last] = rest;
+        ctx.timeout(() => {
+          // Gone (the whole stack moved or closed), refilled, or named since.
+          if (!group.isConnected || group.tabs.length !== 1 || group.tabs[0] !== last || !autoTitled(group)) return;
+          group.ungroupTabs();
+        });
+      }
+      ctx.listen(gBrowser.tabContainer, "TabClose", (e) => leaving(e.target, e.target.group));
+      // Dispatched on the group, with the tab as detail.
+      ctx.listen(gBrowser.tabContainer, "TabUngrouped", (e) => leaving(e.detail, e.target));
     },
   });
 
