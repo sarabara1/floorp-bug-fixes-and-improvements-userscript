@@ -74,6 +74,8 @@ Optional changes to how stacks behave.
 
 - **Auto-title stacks**: Unnamed stacks show the title of the tab you're using in them, and new stacks skip the naming popup. Naming a stack shows its name again; clearing the name brings the title back.
   - *Show the tab's icon* (on by default): Also shows that tab's icon, and its loading animation, in place of the stack symbol.
+  - *Links from normal tabs make a stack* (off by default): Opening a link in a new tab from a normal tab turns that tab and the new one into a stack, titled after the tab you're using.
+  - *One-tab stacks become normal tabs* (off by default): When an auto-titled stack is down to one tab, the stack goes away and that tab stays in its place as a normal tab.
 - **Tab icons on named stacks**: Named stacks show the icon of the tab you're using in them, and its loading animation, in place of the stack symbol.
 - **Confirm closing stacks**: Asks before closing a stack or group with more than one tab.
 - **Unload Stack menu item**: Adds "Unload Stack" and "Unload Group" to a stack's or group's menu, to unload all its tabs.
