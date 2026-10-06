@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.2.0
+// @version        1.3.0
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
