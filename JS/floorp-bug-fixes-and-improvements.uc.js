@@ -5312,6 +5312,800 @@
   });
 
   defineFeature({
+    id: "stacks-look-like-tabs",
+    category: "appearance",
+    name: "Stacks look like normal tabs (Experimental)",
+    description: "Stacks look exactly like normal tabs in whatever theme and design you use: the same shape, spacing, text, icon and close button, and the same hover and selected colors. Only their colored outline and tab count set them apart.",
+    default: false,
+    init(ctx) {
+      // Themes style tabs through selectors on .tabbrowser-tab and its parts,
+      // which a stack chip (a tab-group label) never matches, and Floorp
+      // gives the chip its own look. So the chip copies a real tab: the
+      // computed styles of an unselected tab (hover forced off, then on, with
+      // InspectorUtils' pseudo-class locks, as the devtools do) and of the
+      // selected tab, read again whenever the theme, design, color scheme or
+      // density may have changed. A stack's tabs are squashed by Floorp only
+      // on the <tab> itself, so the selected tab's inner parts read true even
+      // inside a stack; sizes and positions come from a visible normal tab.
+      // The stack's colored outline is drawn as an inset outline, so it adds
+      // nothing to the box.
+      const IU = ctx.require(window.InspectorUtils?.addPseudoClassLock && window.InspectorUtils, "InspectorUtils");
+      const STACK = `#tabbrowser-tabs tab-group[${U.STACK_ATTR}]`;
+      const ROOT_ATTR = "uc-tablike";
+      const WHOLE_OUTLINE = "stack-whole-outline"; // sub-setting: end the chip where the tab bar clips
+      const TAB_EDGE = "stack-tab-highlight"; // sub-setting: the open stack takes the selected tab's colored edge
+      const sheet = ctx.track(document.createElementNS(XHTML_NS, "style"));
+      sheet.id = "uc-tablike-style";
+      document.head.appendChild(sheet);
+      ctx.onCleanup(() => document.documentElement.removeAttribute(ROOT_ATTR));
+
+      const px = (v) => parseFloat(v) || 0;
+      const partsOf = (tab) => ({
+        tab,
+        bg: tab.querySelector(".tab-background"),
+        content: tab.querySelector(".tab-content"),
+        icon: tab.querySelector(".tab-icon-image"),
+        label: tab.querySelector(".tab-label"),
+        close: tab.querySelector(".tab-close-button"),
+      });
+      const complete = (p) => p.bg && p.content && p.icon && p.label && p.close;
+
+      // Reads `fn` with :hover forced on or off on `lockOn`, and transitions
+      // off on the tab's parts: tab backgrounds fade, and a computed style
+      // read mid-fade (right after a tab switch, or right after the lock) is
+      // still the old color. Styles are flushed with the lock gone before the
+      // transitions come back, so the real tab doesn't fade out of the state.
+      // A selected tab standing in for the normal look (see read), read with
+      // its selected state taken off.
+      let standIn = null;
+
+      // Floorp squashes a stack's tabs to nothing with one rule in its
+      // stylesheet. With no normal tab in view at all, a stack's tab is read
+      // instead: the rule is told to leave tabs with PROBE_ATTR alone, and
+      // readTab sets that attribute only while it reads, so for that moment
+      // the tab is laid out like a normal tab (it never paints that way).
+      // The rule is put back when the feature stops.
+      const PROBE_ATTR = "uc-tablike-probe";
+      let probing = new Set();
+      const squashed = new Map(); // Floorp's rule -> its own selector
+      ctx.onCleanup(() => {
+        for (const [rule, selector] of squashed) {
+          try { rule.selectorText = selector; } catch {}
+        }
+      });
+      function canProbe() {
+        for (const [rule] of squashed) {
+          if (rule.parentStyleSheet?.ownerNode?.isConnected && rule.selectorText.includes(PROBE_ATTR)) return true;
+          squashed.delete(rule); // Floorp rebuilt its stylesheet
+        }
+        for (const style of document.querySelectorAll("style")) {
+          let rules;
+          try { rules = style.sheet?.cssRules; } catch { continue; }
+          for (const rule of rules ?? []) {
+            if (!rule.selectorText?.includes(`tab-group[${U.STACK_ATTR}] > :is(.tabbrowser-tab`) || rule.style?.visibility !== "collapse") continue;
+            const selector = rule.selectorText;
+            rule.selectorText = `${selector}:not([${PROBE_ATTR}])`;
+            if (!rule.selectorText.includes(PROBE_ATTR)) return false;
+            squashed.set(rule, selector);
+            return true;
+          }
+        }
+        return false;
+      }
+
+      // While probed, a tab is as wide as its stack's chip (what the look is
+      // for) and takes no room: a negative end margin of the same width keeps
+      // the tab bar's contents as wide as before (laid out in the flow, it made
+      // a full tab bar overflow and underflow, which can blink its arrows).
+      const PROBE_SIZE = ["flex", "width", "min-width", "max-width", "margin-inline-start", "margin-inline-end"];
+      function sizeProbe(tab) {
+        const chip = U.stackOf(tab)?.querySelector(".tab-group-label-container");
+        const w = Math.round(chip?.getBoundingClientRect().width || 0) || 200;
+        const saved = PROBE_SIZE.map(n => [n, tab.style.getPropertyValue(n), tab.style.getPropertyPriority(n)]);
+        const set = { flex: "none", width: `${w}px`, "min-width": `${w}px`, "max-width": `${w}px`, "margin-inline-start": "0px", "margin-inline-end": `-${w}px` };
+        for (const n of PROBE_SIZE) tab.style.setProperty(n, set[n], "important");
+        return () => {
+          for (const [n, v, prio] of saved) {
+            if (v) tab.style.setProperty(n, v, prio);
+            else tab.style.removeProperty(n);
+          }
+        };
+      }
+
+      function readTab(p, lockOn, hover, fn) {
+        const probe = probing.has(p.tab) && canProbe();
+        // A probed tab's own size transitions too (Firefox's tab width).
+        const els = probe ? [p.tab, p.bg, p.content, p.icon, p.label, p.close] : [p.bg, p.content, p.icon, p.label, p.close];
+        const saved = els.map(el => el.style.getPropertyValue("transition"));
+        for (const el of els) el.style.setProperty("transition", "none", "important");
+        // Taken off and put back within this call, so it never paints.
+        const unsize = probe ? sizeProbe(p.tab) : null;
+        if (probe) p.tab.setAttribute(PROBE_ATTR, "");
+        const stripped = p.tab === standIn
+          ? ["selected", "visuallyselected"].filter(a => p.tab.hasAttribute(a)).map(a => [a, p.tab.getAttribute(a)])
+          : [];
+        for (const [a] of stripped) p.tab.removeAttribute(a);
+        IU.addPseudoClassLock(lockOn, ":hover", hover);
+        try {
+          return fn();
+        } finally {
+          IU.removePseudoClassLock(lockOn, ":hover");
+          for (const [a, v] of stripped) p.tab.setAttribute(a, v);
+          if (probe) p.tab.removeAttribute(PROBE_ATTR);
+          unsize?.();
+          for (const el of els) getComputedStyle(el).backgroundColor; // flush without transitions
+          els.forEach((el, i) => {
+            if (saved[i]) el.style.setProperty("transition", saved[i]);
+            else el.style.removeProperty("transition");
+          });
+        }
+      }
+
+      // The state-dependent look of a tab.
+      function lookOf(p) {
+        // The background's box inside the tab. Themes may size it with auto
+        // margins and percentages (Fluerial's hover pill), which computed
+        // margins don't show, so it's measured; a stack's squashed tabs have
+        // no layout and fall back to the margins (stateBox).
+        const t = p.tab.getBoundingClientRect();
+        const r = p.bg.getBoundingClientRect();
+        const rtl = getComputedStyle(p.tab).direction === "rtl";
+        const laidOut = t.width > 0 && r.width > 0;
+        const box = laidOut
+          ? { top: r.top - t.top, bottom: t.bottom - r.bottom, start: rtl ? t.right - r.right : r.left - t.left, end: rtl ? r.left - t.left : t.right - r.right }
+          : null;
+        // Where the content row's middle sits in the tab (a theme may move it
+        // for a state: Fluerial's selected tab sits lower).
+        const c = p.content.getBoundingClientRect();
+        const contentMid = laidOut ? (c.top + c.bottom) / 2 - t.top : null;
+        const bg = getComputedStyle(p.bg);
+        const label = getComputedStyle(p.label);
+        const close = getComputedStyle(p.close);
+        const icon = getComputedStyle(p.icon);
+        // Themes hide a close button by removing it, hiding it or fading it
+        // out (Lepton and Photon hide unhovered ones in a crowded tab bar with
+        // visibility and opacity). A stack's tabs are visibility: collapse,
+        // which their parts inherit, so visibility only counts on a tab that
+        // is itself visible.
+        const tabVisible = getComputedStyle(p.tab).visibility === "visible";
+        const closeShown = close.display !== "none" && parseFloat(close.opacity) > 0 &&
+          (close.visibility === "visible" || !tabVisible);
+        const side = (s) => `${bg[`border${s}Width`]} ${bg[`border${s}Style`]} ${bg[`border${s}Color`]}`;
+        return {
+          bgColor: bg.backgroundColor,
+          bgImage: bg.backgroundImage,
+          // Where each image layer goes: image themes (dark stars, Tokyo Night)
+          // give a selected tab several layers, with a line along the top
+          // (repeated across) and the theme's picture pinned to the window.
+          bgLayout: [
+            ["background-position-x", bg.backgroundPositionX], ["background-position-y", bg.backgroundPositionY],
+            ["background-size", bg.backgroundSize], ["background-repeat", bg.backgroundRepeat],
+            ["background-attachment", bg.backgroundAttachment], ["background-origin", bg.backgroundOrigin],
+            ["background-clip", bg.backgroundClip], ["background-blend-mode", bg.backgroundBlendMode],
+          ],
+          // The theme's colored edge, if any (stack-tab-highlight). An outline
+          // the content layer covers isn't seen: Fluerial gives a selected
+          // tab's content the same background, on top of the outline.
+          filter: bg.filter,
+          edgeOutline: coveredByContent(p, laidOut ? r : null) ? null
+            : { style: bg.outlineStyle, width: bg.outlineWidth, color: bg.outlineColor, offset: bg.outlineOffset },
+          shadow: bg.boxShadow,
+          border: { top: side("Top"), right: side("Right"), bottom: side("Bottom"), left: side("Left") },
+          borderWidth: { top: px(bg.borderTopWidth), right: px(bg.borderRightWidth), bottom: px(bg.borderBottomWidth), left: px(bg.borderLeftWidth) },
+          radius: [bg.borderTopLeftRadius, bg.borderTopRightRadius, bg.borderBottomRightRadius, bg.borderBottomLeftRadius].join(" "),
+          box,
+          contentMid,
+          mt: px(bg.marginTop), mb: px(bg.marginBottom), ms: px(bg.marginInlineStart), me: px(bg.marginInlineEnd),
+          bgOpacity: bg.opacity,
+          color: label.color,
+          textOpacity: label.opacity,
+          textShadow: label.textShadow,
+          fontWeight: label.fontWeight,
+          closeShown,
+          closeOpacity: close.opacity,
+          closeFillOpacity: close.fillOpacity,
+          iconOpacity: icon.opacity,
+        };
+      }
+
+      // Sizes and positions, measured on a normal tab with hover forced off:
+      // themes may reshape the background on hover (Fluerial shrinks it to a
+      // pill), and that's a state of the background, not the tab's layout.
+      // Positions are taken from the background's outer box, which is the
+      // chip label's box (the label draws no border of its own).
+      function layoutOf(p) {
+        const rtl = getComputedStyle(p.tab).direction === "rtl";
+        const b = p.bg.getBoundingClientRect();
+        const edges = { rtl, left: b.left, right: b.right };
+        const ts = getComputedStyle(p.tab);
+        const cs = getComputedStyle(p.content);
+        const ls = getComputedStyle(p.label);
+        // Where the content row sits in the background (Lepton puts it a
+        // little above the middle); the chip's content moves the same way.
+        const cr = p.content.getBoundingClientRect();
+        // How far the background runs past the edge that clips the tab bar
+        // (Lepton's do, by 4px, so a box there loses its bottom edge).
+        let clipBottom = Infinity;
+        for (let el = p.tab.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+          const es = getComputedStyle(el);
+          if (es.overflowY !== "visible") clipBottom = Math.min(clipBottom, el.getBoundingClientRect().bottom - px(es.borderBottomWidth));
+        }
+        return {
+          edges,
+          clipOverlap: Number.isFinite(clipBottom) ? Math.max(0, b.bottom - clipBottom) : 0,
+          bgHeight: b.height,
+          contentShift: (cr.top + cr.bottom) / 2 - (b.top + b.bottom) / 2,
+          tabPadStart: ts.paddingInlineStart, tabPadEnd: ts.paddingInlineEnd,
+          // From the background's end to where the content stops.
+          padEnd: (rtl ? cr.left - b.left : b.right - cr.right) + px(cs.paddingInlineEnd),
+          font: { family: ls.fontFamily, size: ls.fontSize, style: ls.fontStyle, spacing: ls.letterSpacing },
+        };
+      }
+
+      // The icon, on a tab that shows one; without one, its computed size and
+      // margins stand in.
+      function iconOf(ip, rtl) {
+        const b = ip.bg.getBoundingClientRect();
+        const icon = ip.icon.getBoundingClientRect();
+        const label = ip.label.getBoundingClientRect();
+        return {
+          padStart: rtl ? b.right - icon.right : icon.left - b.left,
+          iconW: icon.width, iconH: icon.height,
+          iconGap: rtl ? icon.left - label.right : label.left - icon.right,
+        };
+      }
+      function iconFallback(p) {
+        const cs = getComputedStyle(p.content);
+        const is = getComputedStyle(p.icon);
+        const stack = p.icon.closest(".tab-icon-stack");
+        const ss = stack ? getComputedStyle(stack) : is;
+        return {
+          padStart: px(cs.paddingInlineStart) + px(ss.marginInlineStart),
+          iconW: px(is.width) || 16, iconH: px(is.height) || 16,
+          iconGap: px(ss.marginInlineEnd) || px(is.marginInlineEnd),
+        };
+      }
+
+      // The close button, with hover forced on so it shows where it would,
+      // placed against the normal background box (the tab doesn't move; its
+      // background may).
+      function closeOf(p, edges, padEnd) {
+        const cs = getComputedStyle(p.close);
+        if (cs.display === "none") return {};
+        const c = p.close.getBoundingClientRect();
+        // The label box reaches up to the close button; the text inside it may be shorter.
+        const lc = (p.label.closest(".tab-label-container") ?? p.label).getBoundingClientRect();
+        const toEnd = (r) => (edges.rtl ? r.left - edges.left : edges.right - r.right);
+        return {
+          closeW: c.width, closeH: c.height, closeEnd: toEnd(c),
+          closePad: cs.padding, closeRadius: cs.borderRadius,
+          // How far the count has to stay in to clear it, as the tab's label does.
+          closeRoom: Math.max(0, toEnd(lc) - padEnd),
+        };
+      }
+
+      // Whether a normal tab shows its close button, unhovered and hovered.
+      // Some themes (Lepton, Photon, Protonfix) bring an unselected tab's close
+      // button back on hover, in a crowded tab bar, with a selector that needs
+      // the tab directly in the tab strip, which a stack's tab never is; so a
+      // probed tab can't tell (nor measure the button). What normal tabs
+      // showed, and the button's size, is remembered per theme and
+      // close-button mode (kept in a pref, for a start with only stacks) and
+      // used when a stack's tab had to be read. Returns the close button to use.
+      const CLOSE_MEMO_PREF = "uc.floorp-improvements-cache.tablike-close";
+      function rememberClose(probed, normal, hover, close) {
+        const key = `${themeKey}|${gBrowser.tabContainer.getAttribute("closebuttons") ?? ""}`;
+        let memo = {};
+        try { memo = JSON.parse(Services.prefs.getStringPref(CLOSE_MEMO_PREF, "{}")) || {}; } catch {}
+        const pick = (l) => ({ closeShown: l.closeShown, closeOpacity: l.closeOpacity, closeFillOpacity: l.closeFillOpacity });
+        if (probed) {
+          if (!memo[key]) return close;
+          Object.assign(normal, memo[key].normal);
+          Object.assign(hover, memo[key].hover);
+          return memo[key].close ?? close; // a normal tab's beats the selected stack tab's
+        }
+        const value = { normal: pick(normal), hover: pick(hover), close: close.closeW ? close : memo[key]?.close };
+        if (JSON.stringify(memo[key]) === JSON.stringify(value)) return close;
+        delete memo[key];
+        memo[key] = value;
+        const keys = Object.keys(memo);
+        for (const old of keys.slice(0, Math.max(0, keys.length - 12))) delete memo[old];
+        try { Services.prefs.setStringPref(CLOSE_MEMO_PREF, JSON.stringify(memo)); } catch {}
+        return close;
+      }
+
+      let geometry = null;
+      let looks = null;
+      let selectedLayout = null; // { box, contentMid } of a laid-out selected tab
+      let closeCache = null; // the last close button measured
+      let themeKey = ""; // the current theme's normal-tab layout (see read)
+
+      // Without a measured close button: its computed size and margins, at the
+      // end of the content.
+      function closeFallback(p, layout) {
+        const cs = getComputedStyle(p.close);
+        const pad = cs.boxSizing === "border-box" ? [0, 0] : [px(cs.paddingLeft) + px(cs.paddingRight), px(cs.paddingTop) + px(cs.paddingBottom)];
+        const w = px(cs.width) + pad[0];
+        const h = px(cs.height) + pad[1];
+        if (!w) return {};
+        return {
+          closeW: w, closeH: h, closeEnd: layout.padEnd + px(cs.marginInlineEnd),
+          closePad: cs.padding, closeRadius: cs.borderRadius,
+          closeRoom: w + px(cs.marginInlineStart) + px(cs.marginInlineEnd),
+        };
+      }
+
+      function read() {
+        const visible = (t) => !t.hidden && !t.closing && !t.pinned && !U.stackOf(t) && t.getBoundingClientRect().width > 0;
+        const hasIcon = (t) => (t.querySelector(".tab-icon-image")?.getBoundingClientRect().width ?? 0) > 0;
+        // Firefox moves `visuallyselected` (which themes style) only once the
+        // new tab has painted, a moment after the switch; until then the old
+        // tab still looks selected and the new one doesn't.
+        const looksSelected = (t) => t.hasAttribute("visuallyselected");
+        // A tab that's opening (or making room for one) is still changing
+        // size: a new tab starts as a sliver until Firefox gives it "fadein",
+        // then grows, and a sliver measures as nonsense.
+        const settling = (t) => !t.hasAttribute("fadein") ||
+          t.getAnimations().some(a => a instanceof CSSTransition && a.playState === "running");
+        const all = gBrowser.tabs.filter(t => !t.selected && !t.multiselected && !looksSelected(t) && visible(t));
+        const steady = all.filter(t => !settling(t));
+        const normals = steady.length ? steady : all;
+        const selectedTab = gBrowser.selectedTab;
+        // With no other normal tab in view (e.g. the selected tab is the only
+        // one in this workspace besides stacks), the selected tab stands in,
+        // read as if it weren't selected.
+        standIn = normals.length ? null
+          : selectedTab && !selectedTab.multiselected && visible(selectedTab) ? selectedTab : null;
+        // With every tab in a stack, one of the stacks' tabs is probed (see
+        // canProbe): an unselected one, preferably with an icon, or else the
+        // selected one, read as if it weren't selected.
+        let probe = null;
+        if (!normals.length && !standIn) {
+          const members = gBrowser.tabs.filter(t => !t.hidden && !t.closing && !t.pinned && U.stackOf(t) &&
+            U.stackOf(t).style.display !== "none" && complete(partsOf(t)));
+          const unselected = members.filter(t => !t.selected && !t.multiselected && !looksSelected(t));
+          probe = unselected.find(t => t.hasAttribute("image")) ?? unselected[0] ??
+            (members.includes(selectedTab) && !selectedTab.multiselected ? selectedTab : null);
+          if (probe === selectedTab) standIn = selectedTab;
+        }
+        // The selected tab is probed for its own look when it's a stack's.
+        probing = new Set([probe, U.stackOf(selectedTab) ? selectedTab : null].filter(Boolean));
+        let normalTab = normals.find(hasIcon) ?? normals[0] ?? standIn ?? probe;
+        // A tab that's still opening isn't read (its sizes are a sliver's):
+        // the look stays as it was and is read again once it has settled.
+        // Reading it anyway made the stacks' text jump for a moment whenever
+        // the first normal tab opened.
+        if (normalTab && settling(normalTab)) {
+          ctx.timeout(refresh, 250);
+          normalTab = null;
+        }
+        if (normalTab) {
+          const p = partsOf(normalTab);
+          if (complete(p)) {
+            const transition = getComputedStyle(p.bg).transition;
+            const [normal, layout, tabTop] = readTab(p, p.tab, false, () => [lookOf(p), layoutOf(p), p.tab.getBoundingClientRect().top]);
+            // What remembered measurements belong to: the normal tab's layout,
+            // which a design or theme switch changes. A selected layout or
+            // close button from Fluerial must not be used under Photon.
+            themeKey = JSON.stringify([layout.bgHeight, layout.contentShift, normal.box, layout.font.size, layout.font.family],
+              (k, v) => (typeof v === "number" ? Math.round(v * 10) / 10 : v));
+            const iconTab = (probe === normalTab && probe.hasAttribute("image") ? probe : null) ??
+              [normalTab, ...normals, selectedTab].find(t => t && visible(t) && hasIcon(t)) ?? null;
+            const ip = iconTab && partsOf(iconTab);
+            const icon = ip && complete(ip)
+              ? readTab(ip, ip.tab, false, () => iconOf(ip, layout.edges.rtl))
+              : iconFallback(p);
+            let [hover, close] = readTab(p, p.tab, true, () => [lookOf(p), closeOf(p, layout.edges, layout.padEnd)]);
+            // Narrow tabs show a close button only on the selected tab, even on
+            // hover (Firefox's closebuttons="activetab"): measure it there if
+            // that's a normal tab (the stand-in too, as itself), placed against
+            // the normal box.
+            if (!close.closeW && (selectedTab !== normalTab || standIn) && (visible(selectedTab) || probing.has(selectedTab)) &&
+                looksSelected(selectedTab) && !settling(selectedTab)) {
+              const sp2 = partsOf(selectedTab);
+              if (complete(sp2)) {
+                const nb = normal.box;
+                const rtl = layout.edges.rtl;
+                const was = standIn;
+                standIn = null;
+                try {
+                  close = readTab(sp2, sp2.tab, false, () => {
+                    const t = selectedTab.getBoundingClientRect();
+                    const edges = { rtl, left: t.left + (rtl ? nb.end : nb.start), right: t.right - (rtl ? nb.start : nb.end) };
+                    return closeOf(sp2, edges, layout.padEnd);
+                  });
+                } finally {
+                  standIn = was;
+                }
+              }
+            }
+            close = rememberClose(normalTab === probe, normal, hover, close);
+            if (close.closeW) closeCache = { ...close, themeKey };
+            else close = (closeCache?.themeKey === themeKey ? closeCache : null) ?? closeFallback(p, layout);
+            const closeHoverBg = readTab(p, p.close, true, () => getComputedStyle(p.close).backgroundColor);
+            // The chip container's top against the tab's (both are tab strip
+            // items, but a theme may pad tabs).
+            const chip = document.querySelector(`${STACK} > .tab-group-label-container`);
+            const containerShift = chip ? chip.getBoundingClientRect().top - tabTop : 0;
+            geometry = { ...layout, ...icon, ...close, closeHoverBg, transition, containerShift };
+            looks = { ...(looks || {}), normal, hover };
+          }
+        }
+        standIn = null; // the selected look is read as it is
+        const sp = selectedTab && partsOf(selectedTab);
+        if (sp && complete(sp) && looks) {
+          if (settling(selectedTab)) {
+            ctx.timeout(refresh, 250); // the selected look stays until it has settled
+          } else if (looksSelected(selectedTab)) {
+            const sel = readTab(sp, sp.tab, false, () => lookOf(sp));
+            if (sel.box) selectedLayout = { box: sel.box, contentMid: sel.contentMid, themeKey };
+            else if (selectedLayout?.themeKey === themeKey) Object.assign(sel, { box: selectedLayout.box, contentMid: selectedLayout.contentMid });
+            looks.selected = sel;
+          } else {
+            ctx.timeout(refresh, 150); // not painted as selected yet
+          }
+        }
+      }
+
+      // Like a tab, the chip has a background layer and a content layer. The
+      // label wrapper (.tab-group-label-hover-highlight) is the background:
+      // each state's box (margins, height, corners), border, color and
+      // shadow, and the stack's outline, so the outline hugs the shape the
+      // theme gives a tab (normal or selected). On hover the outline stays on
+      // the normal box, drawn by the label: a hover shape (Fluerial's pill) is
+      // an effect, not the stack's edge. The label is the content, and stays
+      // on the normal box in every state: negative margins inside the wrapper undo
+      // whatever the state's box changes. A state's box keeps its own margins
+      // but ends no lower than the normal box does (cut short where the tab
+      // bar clips, with "Show the whole outline").
+      // A state's background box within the tab: measured, or the normal box
+      // moved by the difference in margins.
+      function stateBox(l) {
+        const n = looks.normal;
+        if (l.box) return l.box;
+        return {
+          top: n.box.top + l.mt - n.mt, bottom: n.box.bottom + l.mb - n.mb,
+          start: n.box.start + l.ms - n.ms, end: n.box.end + l.me - n.me,
+        };
+      }
+      function bgRules(l, cut) {
+        const g = geometry;
+        const nb = looks.normal.box;
+        const b = stateBox(l);
+        // Ends no lower than the normal box, which may be cut short.
+        const bottom = Math.min(nb.top + g.bgHeight - (b.bottom - nb.bottom), nb.top + g.bgHeight - cut);
+        const h = Math.max(0, bottom - b.top);
+        return `
+          margin-block: ${b.top - g.containerShift}px 0px !important;
+          margin-inline: ${b.start}px ${b.end}px !important;
+          height: ${h}px !important; min-height: ${h}px !important; max-height: ${h}px !important;
+          border-top: ${l.border.top} !important; border-right: ${l.border.right} !important;
+          border-bottom: ${l.border.bottom} !important; border-left: ${l.border.left} !important;
+          border-radius: ${l.radius} !important;
+          background-color: ${l.bgColor} !important;
+          background-image: ${l.bgImage} !important;
+          ${l.bgLayout.map(([prop, value]) => `${prop}: ${value} !important;`).join(" ")}
+          box-shadow: ${l.shadow} !important;`;
+      }
+
+      // "Highlight like a selected tab": the selected tab's colored edge, as
+      // the theme draws it: an outline (Firefox themes' accent in Proton and
+      // Fluerial), or drop shadows (Lepton). Drop shadows become box shadows,
+      // which take the same color and offsets, so they don't shadow the
+      // stack's text too. Null when the theme draws no edge.
+      function dropShadows(filter) {
+        const out = [];
+        for (let i = filter.indexOf("drop-shadow("); i !== -1; i = filter.indexOf("drop-shadow(", i)) {
+          let depth = 0, j = i + "drop-shadow".length;
+          for (; j < filter.length; j++) {
+            if (filter[j] === "(") depth++;
+            else if (filter[j] === ")" && --depth === 0) break;
+          }
+          out.push(filter.slice(i + "drop-shadow(".length, j).trim());
+          i = j + 1;
+        }
+        return out;
+      }
+      const isClear = (color) => /^transparent$|,\s*0\)$|\/\s*0\)$/.test(String(color).trim());
+      function coveredByContent(p, bgRect) {
+        const cs = getComputedStyle(p.content);
+        if (isClear(cs.backgroundColor) && cs.backgroundImage === "none") return false;
+        if (!bgRect) return true;
+        const c = p.content.getBoundingClientRect();
+        return c.left <= bgRect.left + 0.5 && c.right >= bgRect.right - 0.5 && c.top <= bgRect.top + 0.5 && c.bottom >= bgRect.bottom - 0.5;
+      }
+      // Returns { bg, after } (CSS for the background layer and for its
+      // ::after), or null. Drop shadows (Lepton) are the theme's own filter,
+      // on a copy of the background in the layer's ::after, behind the
+      // stack's text: a filter on the layer itself would shadow the text too,
+      // and box shadows don't show through a see-through background the way
+      // the filter does (dark stars tints the whole tab with its accent).
+      function edgeRules(l) {
+        const shadowed = dropShadows(l.filter || "").length > 0;
+        const o = l.edgeOutline;
+        const outlined = !!o && o.style !== "none" && px(o.width) > 0 && !isClear(o.color);
+        if (!shadowed && !outlined) return null;
+        const outline = outlined
+          ? `outline: ${o.width} ${o.style} ${o.color} !important; outline-offset: ${o.offset} !important;`
+          : "outline: none !important;";
+        if (!shadowed) return { bg: outline, after: null };
+        return {
+          bg: `${outline} position: relative !important; isolation: isolate !important;
+            background: none !important; box-shadow: none !important;`,
+          after: `content: "" !important; display: block !important; position: absolute !important; inset: 0 !important;
+            z-index: -1 !important; pointer-events: none !important; border-radius: inherit !important;
+            background-color: ${l.bgColor} !important; background-image: ${l.bgImage} !important;
+            ${l.bgLayout.map(([prop, value]) => `${prop}: ${value} !important;`).join(" ")}
+            box-shadow: ${l.shadow} !important; filter: ${l.filter} !important;`,
+        };
+      }
+      // How far a state moves the content row from the normal tab's.
+      const contentMove = (l) => (l.contentMid != null && looks.normal.contentMid != null ? l.contentMid - looks.normal.contentMid : 0);
+      function labelRules(l, cut) {
+        const nb = looks.normal.box;
+        const b = stateBox(l);
+        const lift = 2 * (geometry.contentShift + contentMove(l)) + cut; // top padding minus bottom padding
+        return `
+          padding-block: ${Math.max(0, lift)}px ${Math.max(0, -lift)}px !important;
+          margin-block: ${nb.top - b.top}px 0px !important;
+          margin-inline: ${nb.start - b.start}px ${nb.end - b.end}px !important;
+          color: ${l.color} !important;
+          text-shadow: ${l.textShadow} !important;`;
+      }
+      const textRules = (l) => `opacity: ${l.textOpacity} !important; font-weight: ${l.fontWeight} !important;`;
+      const closeRules = (l) => `display: ${l.closeShown ? "flex" : "none"} !important; opacity: ${l.closeOpacity} !important; fill-opacity: ${l.closeFillOpacity} !important;`;
+
+      // Where a state shows the close button, the count moves in by the room it
+      // takes, as a tab's title does, and the title fades out before the count.
+      // Painting only (a relative offset and a mask), so the stack keeps its
+      // width under Compact stacks; where it doesn't show, the count stays at
+      // the end.
+      function countRules(l, sel) {
+        // The button's room, plus the theme's icon-to-title gap between the count
+        // and the button (whose padding and hover background reach its edge).
+        const room = l.closeShown ? (geometry.closeRoom ?? 0) + geometry.iconGap : 0;
+        const LABEL = "> .tab-group-label-hover-highlight > .tab-group-label";
+        return `
+          ${sel} ${LABEL}::after { inset-inline-start: ${-room}px !important; }
+          ${sel} ${LABEL}::before { mask-image: linear-gradient(to left, transparent ${room}px, black calc(${room}px + 1em)) !important; }
+          ${sel} ${LABEL}:-moz-locale-dir(rtl)::before { mask-image: linear-gradient(to right, transparent ${room}px, black calc(${room}px + 1em)) !important; }`;
+      }
+
+      function css() {
+        const g = geometry;
+        // "Show the whole outline": the box ends where the tab bar clips, and
+        // the content keeps its place (it would re-center a little higher).
+        const cut = ctx.isActive(WHOLE_OUTLINE) ? g.clipOverlap : 0;
+        // For the absolutely placed parts (close button, throbber).
+        const midShift = (l) => g.contentShift + contentMove(l) + cut / 2;
+        const { normal, hover } = looks;
+        const selected = looks.selected || normal;
+        // The open stack's edge: the selected tab's, with "Highlight like a
+        // selected tab" where the theme draws one, otherwise the stack's color.
+        const edge = ctx.isActive(TAB_EDGE) ? edgeRules(selected) : null;
+        const R = `:root[${ROOT_ATTR}] ${STACK}`;
+        const N = `${R} > .tab-group-label-container`;
+        const H = `${R} > .tab-group-label-container:hover`;
+        const S = `${R}[hasactivetab] > .tab-group-label-container`;
+        // Floorp's "drop to join" cue, and the hover-to-join one (drag-and-drop).
+        const DROP = `:is(${R}[data-floorp-drop-into], :root[${ROOT_ATTR}] #tabbrowser-tabs[movingtab-group] tab-group[${U.STACK_ATTR}]:has(.tab-group-label[dragover-groupTarget])) > .tab-group-label-container`;
+        const BG = "> .tab-group-label-hover-highlight";
+        const LABEL = `${BG} > .tab-group-label`;
+        const outline = "color-mix(in srgb, var(--tab-group-color-invert, currentColor) 70%, transparent)";
+        const outlineActive = "color-mix(in srgb, var(--tab-group-color-invert, currentColor) 85%, white 15%)";
+        return `
+          ${N} {
+            padding-inline: 0 !important;
+            /* The boxes may start below the container's top (where a theme's
+               tabs start lower), and that strip would be part of the toolbar's
+               window-drag area: in a maximized window, clicks on the screen's
+               top edge would move the window instead. Tabs aren't draggable. */
+            -moz-window-dragging: no-drag !important;
+          }
+          ${N} ${BG} {
+            box-sizing: border-box !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            outline: 1px solid ${outline} !important;
+            outline-offset: -1px !important;
+            transition: ${g.transition} !important;
+            ${bgRules(normal, cut)}
+          }
+          ${H} ${BG} { ${bgRules(hover, cut)} outline: none !important; }
+          ${S} ${BG} { ${bgRules(selected, cut)} ${edge?.bg ?? `outline: 1px solid ${outlineActive} !important; outline-offset: -1px !important;`} }
+          ${edge?.after ? `${S} ${BG}::after { ${edge.after} }` : ""}
+
+          ${N} ${LABEL} {
+            box-sizing: border-box !important;
+            flex: none !important;
+            height: ${g.bgHeight - cut}px !important; min-height: ${g.bgHeight - cut}px !important; max-height: ${g.bgHeight - cut}px !important;
+            padding-inline: ${g.padStart}px ${g.padEnd}px !important;
+            border: none !important;
+            border-radius: ${normal.radius} !important;
+            background: none !important;
+            box-shadow: none !important;
+            outline: none !important;
+            ${labelRules(normal, cut)}
+          }
+          ${H} ${LABEL} { ${labelRules(hover, cut)} outline: 1px solid ${outline} !important; outline-offset: -1px !important; }
+          ${S} ${LABEL} { ${labelRules(selected, cut)} outline: none !important; }
+
+          ${N} ${LABEL}::before {
+            font-family: ${g.font.family} !important;
+            font-size: ${g.font.size} !important;
+            font-style: ${g.font.style} !important;
+            letter-spacing: ${g.font.spacing} !important;
+            ${textRules(normal)}
+          }
+          ${H} ${LABEL}::before { ${textRules(hover)} }
+          ${S} ${LABEL}::before { ${textRules(selected)} }
+          /* The count sits at the end, where a tab's title would end. */
+          ${N} ${LABEL}::after {
+            position: relative !important;
+            flex: none !important;
+            margin-inline-start: auto !important;
+            margin-inline-end: 0 !important;
+            padding-inline-start: ${g.iconGap}px !important;
+            font-family: ${g.font.family} !important;
+            font-size: calc(${g.font.size} * 0.9) !important;
+            font-style: ${g.font.style} !important;
+            opacity: 0.7 !important;
+          }
+
+          ${countRules(normal, N)}
+          ${countRules(hover, H)}
+          ${countRules(selected, S)}
+
+          ${N} ${LABEL} > .floorp-stack-icon {
+            position: static !important;
+            transform: none !important;
+            order: -1 !important;
+            flex: none !important;
+            display: revert-layer !important;
+            box-sizing: border-box !important;
+            width: ${g.iconW}px !important;
+            height: ${g.iconH}px !important;
+            margin: 0 !important;
+            margin-inline-end: ${g.iconGap}px !important;
+            opacity: ${normal.iconOpacity} !important;
+          }
+          ${H} ${LABEL} > .floorp-stack-icon { opacity: ${hover.iconOpacity} !important; }
+          ${S} ${LABEL} > .floorp-stack-icon { opacity: ${selected.iconOpacity} !important; }
+          ${N} ${LABEL} > .uc-stack-throbber {
+            inset-inline-start: ${g.padStart}px !important;
+            inset-block-start: calc(50% + ${midShift(normal)}px) !important;
+            width: ${g.iconW}px !important;
+            height: ${g.iconH}px !important;
+          }
+
+          ${N} ${LABEL} > .floorp-stack-close {
+            inset-inline-start: auto !important;
+            inset-block-start: calc(50% + ${midShift(normal)}px) !important;
+            inset-inline-end: ${g.closeEnd ?? g.padEnd}px !important;
+            ${g.closeW ? `box-sizing: border-box !important; width: ${g.closeW}px !important; height: ${g.closeH}px !important;` : ""}
+            ${g.closePad ? `padding: ${g.closePad} !important; border-radius: ${g.closeRadius} !important;` : ""}
+            background-color: transparent !important;
+            ${closeRules(normal)}
+          }
+          ${N} ${LABEL} > .floorp-stack-close:hover { background-color: ${g.closeHoverBg} !important; }
+          ${H} ${LABEL} > .floorp-stack-close { ${closeRules(hover)} inset-block-start: calc(50% + ${midShift(hover)}px) !important; }
+          ${S} ${LABEL} > .floorp-stack-close { ${closeRules(selected)} inset-block-start: calc(50% + ${midShift(selected)}px) !important; }
+          ${H} ${LABEL} > .uc-stack-throbber { inset-block-start: calc(50% + ${midShift(hover)}px) !important; }
+          ${S} ${LABEL} > .uc-stack-throbber { inset-block-start: calc(50% + ${midShift(selected)}px) !important; }
+
+          /* A tab dragged over a stack to join it: Floorp's highlight (and
+             the hover-to-join one) colors the label, which has no background
+             here, so it goes on the background layer. After the states so it
+             wins over all of them. */
+          ${DROP} ${BG} {
+            background-color: color-mix(in srgb, var(--focus-outline-color, #0a84ff) 35%, transparent) !important;
+            background-image: none !important;
+            outline: 1px solid var(--focus-outline-color, #0a84ff) !important;
+            outline-offset: -1px !important;
+          }
+          ${DROP} ${LABEL} { outline: none !important; }
+        `;
+      }
+
+      const refresh = ctx.throttle(() => {
+        read();
+        if (!geometry || !looks?.normal?.box) return; // no normal tab to copy yet
+        const text = css();
+        if (sheet.textContent !== text) sheet.textContent = text;
+        if (!document.documentElement.hasAttribute(ROOT_ATTR)) document.documentElement.setAttribute(ROOT_ATTR, "");
+      }, "copying the tab look");
+      // Stylesheets load a moment after a design or theme switch.
+      const refreshSoon = () => {
+        refresh();
+        ctx.timeout(refresh, 400);
+        ctx.timeout(refresh, 1500);
+      };
+
+      // Themes (inline variables and attributes on the root), Floorp designs
+      // (style sheets added and loaded), density, light/dark.
+      ctx.observe(document.documentElement, { attributes: true }, (records) => {
+        if (records.some(r => r.attributeName !== ROOT_ATTR)) refreshSoon();
+      });
+      ctx.observe(document.documentElement, { childList: true }, refreshSoon);
+      ctx.observe(document.head, { childList: true }, (records) => {
+        if (records.some(r => [...r.addedNodes, ...r.removedNodes].some(n => n !== sheet))) refreshSoon();
+      });
+      ctx.listen(document, "load", (e) => {
+        if (e.target?.localName === "link") refreshSoon();
+      }, true);
+      ctx.observeTopic("lightweight-theme-styling-update", refreshSoon);
+      const scheme = window.matchMedia("(prefers-color-scheme: dark)");
+      const onScheme = ctx.guard(refreshSoon, "color scheme change");
+      scheme.addEventListener("change", onScheme);
+      ctx.onCleanup(() => scheme.removeEventListener("change", onScheme));
+      const prefObserver = { observe: ctx.guard(refreshSoon, "theme pref change") };
+      for (const branch of ["floorp.design.", "browser.uidensity", "browser.theme.", "browser.tabs."]) {
+        Services.prefs.addObserver(branch, prefObserver);
+      }
+      ctx.onCleanup(() => {
+        for (const branch of ["floorp.design.", "browser.uidensity", "browser.theme.", "browser.tabs."]) {
+          Services.prefs.removeObserver(branch, prefObserver);
+        }
+      });
+      // The "Show the whole outline" sub-setting turning on or off.
+      ctx.onCleanup(onChanged(() => refresh()));
+      // Until there's a normal tab to copy, and for the selected look.
+      for (const type of ["TabOpen", "TabClose", "TabSelect", "TabPinned", "TabUnpinned"]) {
+        ctx.listen(gBrowser.tabContainer, type, refresh);
+      }
+      // A crowded tab bar shows close buttons only on the selected tab; Firefox
+      // switches a moment after the tabs have shrunk, with no tab event.
+      ctx.observe(gBrowser.tabContainer, { attributes: true, attributeFilter: ["closebuttons"] }, refresh);
+      // Tabs are styled differently while the window is in the background
+      // (dimmer text), e.g. when the browser starts behind another window.
+      ctx.listen(window, "activate", refresh);
+      ctx.listen(window, "deactivate", refresh);
+
+      // Where a theme's tabs start below the tab bar's top, so do the stack's
+      // boxes, and the strip above them is the label's container. Firefox closes
+      // a stack on middle-click only when the label itself is the target, so a
+      // middle-click on that strip does what a click on the label does (ahead
+      // of Firefox's handler, which would treat it as empty tab-bar space).
+      ctx.listen(gBrowser.tabContainer, "click", (e) => {
+        if (e.button !== 1 || !document.documentElement.hasAttribute(ROOT_ATTR)) return;
+        const t = e.target;
+        if (!t?.closest || t.closest(".tab-group-label")) return;
+        const group = t.closest(".tab-group-label-container")?.parentElement;
+        if (group?.localName !== "tab-group" || !U.isStack(group)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        group.saveAndClose();
+      }, true);
+      refreshSoon();
+    },
+  });
+
+  defineFeature({
+    id: "stack-whole-outline",
+    parent: "stacks-look-like-tabs",
+    name: "Show the whole outline",
+    description: "On themes where tabs run past the bottom of the tab bar, stacks end at its edge so their outline shows all the way around.",
+    default: true,
+    init() {
+      // Nothing to set up: "Stacks look like normal tabs" checks whether this
+      // is running and shortens the stack by however much the theme's tabs
+      // run past the tab bar's clipping edge (none on most themes).
+    },
+  });
+
+  defineFeature({
+    id: "stack-tab-highlight",
+    parent: "stacks-look-like-tabs",
+    name: "Highlight like a selected tab",
+    description: "Where your theme highlights the selected tab in its own color, the open stack is highlighted the same way instead of in its stack color.",
+    default: false,
+    init() {
+      // Nothing to set up: "Stacks look like normal tabs" checks whether this
+      // is running and draws the selected tab's edge on the open stack.
+    },
+  });
+
+  defineFeature({
     id: "compact-stacks",
     category: "appearance",
     name: "Compact stacks",
