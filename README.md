@@ -87,6 +87,9 @@ Optional changes to how stacks behave.
 Optional style changes.
 
 - **Theme-matched stack colors**: New stacks start white on dark themes and gray on light ones, and White is added to the colors for stacks and groups.
+- **Stacks look like normal tabs (Experimental)**: Stacks look exactly like normal tabs in whatever theme and design you use: the same shape, spacing, text, icon and close button, and the same hover and selected colors. Only their colored outline and tab count set them apart.
+  - *Show the whole outline* (on by default): On themes where tabs run past the bottom of the tab bar, stacks end at its edge so their outline shows all the way around.
+  - *Highlight like a selected tab* (off by default): Where your theme highlights the selected tab in its own color, the open stack is highlighted the same way instead of in its stack color.
 - **Compact stacks**: Stacks take up less room than normal tabs, so more of them fit in the tab bar. A stack whose name doesn't fit grows to show it, up to a normal tab's width.
   - *Full width for auto-titled stacks* (off by default): With Auto-title stacks on, auto-titled stacks are as wide as a normal tab, while named stacks stay compact.
 
