@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.3.1
+// @version        1.3.2
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -2581,8 +2581,8 @@
   defineFeature({
     id: "stack-container-line",
     category: "stacks",
-    name: "Container colors",
-    description: "Stack tabs in a container show the container's colored line, like normal tabs.",
+    name: "Containers",
+    description: "Stack tabs in a container show the container's colored line, like normal tabs. A stack or group tab opened in a new container tab or reopened in a private container stays in its stack or group, next to where it was.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -2628,6 +2628,41 @@
       const schedule = syncProxiesOn(ctx, sync);
       // A container's color can be edited in settings.
       ctx.observeTopic("contextual-identity-updated", schedule);
+
+      // Reopening a tab in another container (Firefox's "Open in New Container
+      // Tab", Floorp's "Reopen in Private Container") makes a new tab with no
+      // group, just after the old one: outside its stack or group when it was
+      // the last tab there. Floorp's passes the old `index` option (from
+      // `_tPos`, which no longer exists), which addTab ignores, so its tab
+      // went to the end of the tab bar. Both make their addTab calls
+      // synchronously from the menu item's command, each with its old tab's
+      // address, which tells which tab it replaces (Firefox skips tabs
+      // already in that container).
+      const REOPEN_POPUP = "context_reopenInContainerPopupMenu";
+      const PRIVATE_ITEM = "context_toggleToPrivateContainer";
+      let reopening = null; // the tabs the menu acts on, until each one's new tab is made
+      ctx.listen(window, "command", (e) => {
+        const item = e.target;
+        const isReopen = item?.id === PRIVATE_ITEM
+          || (item?.hasAttribute?.("data-usercontextid") && item.parentNode?.id === REOPEN_POPUP);
+        if (!isReopen) return;
+        const menu = window.TabContextMenu;
+        const tab = menu?.contextTab;
+        reopening = [...new Set([
+          ...(menu?.contextTabs ?? []),
+          ...(tab?.multiselected ? gBrowser.selectedTabs : tab ? [tab] : []),
+        ])];
+        ctx.timeout(() => { reopening = null; });
+      }, true);
+
+      ctx.hook(gBrowser, "addTab", function (next, uri, opts, ...rest) {
+        const i = reopening ? reopening.findIndex(t => t.linkedBrowser?.currentURI?.spec === uri) : -1;
+        if (i < 0) return next(uri, opts, ...rest);
+        const [old] = reopening.splice(i, 1);
+        const group = old.pinned ? null : old.group;
+        if (!group?.isConnected || opts?.tabGroup) return next(uri, opts, ...rest);
+        return next(uri, { ...opts, tabGroup: group, tabIndex: old.index + 1 }, ...rest);
+      });
     },
   });
 
