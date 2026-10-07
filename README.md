@@ -32,6 +32,8 @@ The same list, in the same order, as on the settings page. Sub-settings are list
 Fixes for bugs in Floorp's tab stacks, tab bar, workspaces and sidebar.
 
 - **Stack-aware drag and drop**: Tabs and stacks move around the tab bar smoothly without accidentally merging into stacks. Tabs can move between stacks, tabs from other windows can join a stack, and links, text and files can be dropped onto a stack or its tabs.
+  - *Drop into other workspaces* (on by default): Hold a dragged tab, stack, group, link, text, image or file over the workspaces button to open its menu, then drop it on a workspace: tabs, stacks and groups move to the end of it and links open there, while you stay in the workspace you're in.
+  - *Switch workspaces while dragging* (off by default): Hold a drag over a workspace in the workspaces menu to switch to it, taking dragged tabs, stacks and groups along, so you can drop them exactly where you want in its tab bar.
 - **Double new tab button**: Fixes a random startup bug where the new tab button appears twice and dragging tabs stops working.
 - **Tab menu text on startup**: Fixes the tab menu showing only icons, with no text, when the browser starts on a stack tab.
 - **Stacks in new windows**: Fixes new windows sometimes opening with their stacks turned into plain tab groups.
