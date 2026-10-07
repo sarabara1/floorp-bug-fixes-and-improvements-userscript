@@ -44,7 +44,7 @@ Fixes for bugs in Floorp's tab stacks, tab bar, workspaces and sidebar.
 
 Make stacks and the tabs inside them look and behave like normal tabs.
 
-- **Container colors**: Stack tabs in a container show the container's colored line, like normal tabs.
+- **Containers**: Stack tabs in a container show the container's colored line, like normal tabs. A stack or group tab opened in a new container tab or reopened in a private container stays in its stack or group, next to where it was.
 - **Audio button**: Stack tabs and stacks show the speaker button while playing sound. Click it to mute or unmute.
 - **Loading animation**: Stack tabs show the loading animation while their page loads.
 - **Normal tab buttons**: Stack tabs and stacks have their close button at the right end, keep their icon visible on hover, and use the normal pointer, like normal tabs.
