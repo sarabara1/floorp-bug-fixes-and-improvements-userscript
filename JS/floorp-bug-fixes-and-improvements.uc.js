@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.3.2
+// @version        1.4.0
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -1179,6 +1179,154 @@
       if (id) window.workspacesFuncs.changeWorkspace(id);
     },
 
+    // A new tab page at the end of the tab bar, in the current workspace's
+    // container.
+    openTabHere() {
+      const here = U.workspaces().find(w => w.id === U.currentWorkspace());
+      return gBrowser.addTab(window.BROWSER_NEW_TAB_URL ?? "about:newtab", {
+        tabIndex: gBrowser.tabs.length,
+        index: gBrowser.tabs.length, // older Firefox reads index
+        userContextId: here?.userContextId > 0 ? here.userContextId : undefined,
+        triggeringPrincipal: U.systemPrincipal(),
+      });
+    },
+
+    // The tab to stay on when the selected tab leaves with `moving`: the one
+    // closing it would pick with "Stay in the stack when closing tabs",
+    // otherwise Floorp's choice, the workspace's first tab.
+    tabToStayOn(ctx, moving) {
+      const selected = gBrowser.selectedTab;
+      return ctx.isActive("close-stays-in-stack")
+        ? U.closeTarget(selected, moving, { leftFirst: ctx.isActive("close-prefer-left") })
+        : gBrowser.visibleTabs.find(t => !moving.has(t) && !t.closing);
+    },
+
+    // Sends `tabs` to another workspace while you stay in this one. Firefox
+    // can't hide the selected tab, so another one is selected first (a new
+    // tab if nothing is left here); then Floorp re-hides what belongs
+    // elsewhere. With `toEnd`, they go after everything else there.
+    moveToWorkspace(ctx, tabs, workspaceId, { toEnd = false } = {}) {
+      const moving = new Set(tabs);
+      if (moving.has(gBrowser.selectedTab)) {
+        gBrowser.selectedTab = U.tabToStayOn(ctx, moving) ?? U.openTabHere();
+      }
+      if (toEnd) U.moveToEnd(tabs);
+      U.setWorkspace(tabs, workspaceId);
+      U.refreshWorkspace();
+    },
+
+    // Moves tabs to the end of the tab bar, keeping their order: a whole
+    // stack or group as one, any other tab out of its group (a split view
+    // moves whole).
+    moveToEnd(tabs) {
+      const moving = new Set(tabs);
+      const done = new Set();
+      for (const t of gBrowser.tabs.filter(x => moving.has(x))) {
+        const group = t.group;
+        if (group && group.tabs.every(x => moving.has(x))) {
+          if (done.has(group)) continue;
+          done.add(group);
+          gBrowser.moveTabTo(group, { tabIndex: gBrowser.tabs.length - 1 });
+          continue;
+        }
+        if (t.splitview) {
+          if (done.has(t.splitview)) continue;
+          done.add(t.splitview);
+        }
+        gBrowser.moveTabToEnd(t);
+      }
+    },
+
+    setWorkspace(tabs, workspaceId) {
+      for (const t of tabs) {
+        const was = U.workspaceOf(t);
+        t.setAttribute(U.WS_ATTR, workspaceId);
+        // "Last tab shown in that workspace" belongs to the old one.
+        if (t.getAttribute(U.WS_LAST_SHOWN_ATTR)?.replace(/[{}]/g, "") === was) {
+          t.removeAttribute(U.WS_LAST_SHOWN_ATTR);
+        }
+      }
+    },
+
+    // ---- drops ----
+    // A link, text, image or file: never a tab.
+    isLinkDrop(e) {
+      const dt = e.dataTransfer;
+      if (!dt || U.dtHasType(dt, U.TAB_DROP_TYPE)) return false;
+      try {
+        if (Services.droppedLinkHandler.canDropLink(e, true)) return true;
+      } catch (err) {}
+      // canDropLink can't read the data on dragover in some builds.
+      return U.dtHasType(dt, "text/plain")
+        || U.dtHasType(dt, "text/x-moz-url")
+        || U.dtHasType(dt, "text/uri-list")
+        || U.dtHasType(dt, "text/html");
+    },
+
+    // The links in a drop. The dataTransfer only lasts as long as the event,
+    // so this is read synchronously. javascript: and data: are rejected.
+    readDropLinks(e) {
+      const dlh = Services.droppedLinkHandler;
+      const urls = [];
+      for (const l of dlh.dropLinks(e, true) || []) if (l && l.url) urls.push(l.url);
+      let triggeringPrincipal, csp;
+      try {
+        triggeringPrincipal = dlh.getTriggeringPrincipal(e);
+        csp = dlh.getCsp(e);
+      } catch (err) {
+        triggeringPrincipal = U.systemPrincipal();
+        csp = null;
+      }
+      return { urls, triggeringPrincipal, csp };
+    },
+
+    // A dropped URL or text, resolved as the address bar does: keywords
+    // expand, plain text becomes a search. → { url, postData } | null
+    async resolveDropText(text) {
+      if (typeof getShortcutOrURIAndPostData === "function") {
+        try {
+          const d = await getShortcutOrURIAndPostData(text);
+          if (d && d.url) return d;
+        } catch (err) {
+          console.warn(LOG, "getShortcutOrURIAndPostData failed for a drop", err);
+        }
+      }
+      try {
+        const flags =
+          Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP |
+          Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS;
+        const info = Services.uriFixup.getFixupURIInfo(text, flags);
+        const uri = info.preferredURI || info.fixedURI;
+        if (uri) return { url: uri.spec, postData: null };
+      } catch (err) {
+        console.warn(LOG, "URIFixup fallback failed for a drop", err);
+      }
+      return null;
+    },
+
+    // The tabs a tab drag carries, in any window: a tab with the others
+    // dragged along (a multiselection, a split view), or a whole stack or
+    // group for its label. null for anything else.
+    draggedTabs(dt) {
+      if (!U.dtHasType(dt, U.TAB_DROP_TYPE)) return null;
+      let src = null;
+      try {
+        src = dt.mozGetDataAt(U.TAB_DROP_TYPE, 0);
+      } catch (err) {}
+      if (!src || src.closing) return null;
+      if (src.classList?.contains("tab-group-label")) {
+        return src.group?.tabs?.length ? [...src.group.tabs] : null;
+      }
+      if (src.localName !== "tab") return null;
+      const out = [];
+      for (const item of [src, ...(src._dragData?.movingTabs ?? [])]) {
+        for (const t of item.localName === "tab" ? [item] : [...(item.tabs ?? [])]) {
+          if (t.localName === "tab" && !t.closing && !out.includes(t)) out.push(t);
+        }
+      }
+      return out;
+    },
+
     // The most recently viewed of `tabs` (lastAccessed survives restarts).
     lastViewed(tabs) {
       return tabs.reduce((a, t) => (!a || t.lastAccessed > a.lastAccessed ? t : a), null);
@@ -1314,45 +1462,7 @@
       });
 
       // ---- links, text and files dropped on the stack bar -----------------
-      const dlh = () => Services.droppedLinkHandler;
-
-      // A link, text or file — never a tab.
-      function isExternalLinkDrop(e) {
-        const dt = e.dataTransfer;
-        if (!dt || U.dtHasType(dt, TAB_DROP_TYPE)) return false;
-        try {
-          if (dlh().canDropLink(e, true)) return true;
-        } catch (err) {}
-        // canDropLink can't read the data on dragover in some builds.
-        return U.dtHasType(dt, "text/plain")
-          || U.dtHasType(dt, "text/x-moz-url")
-          || U.dtHasType(dt, "text/uri-list")
-          || U.dtHasType(dt, "text/html");
-      }
-
-      // A dropped URL or text, resolved as the address bar does: keywords
-      // expand, plain text becomes a search.
-      async function resolveDropText(text) {
-        if (typeof getShortcutOrURIAndPostData === "function") {
-          try {
-            const d = await getShortcutOrURIAndPostData(text);
-            if (d && d.url) return d;
-          } catch (err) {
-            console.warn(LOG, "drag-and-drop: getShortcutOrURIAndPostData failed", err);
-          }
-        }
-        try {
-          const flags =
-            Ci.nsIURIFixup.FIXUP_FLAG_ALLOW_KEYWORD_LOOKUP |
-            Ci.nsIURIFixup.FIXUP_FLAG_FIX_SCHEME_TYPOS;
-          const info = Services.uriFixup.getFixupURIInfo(text, flags);
-          const uri = info.preferredURI || info.fixedURI;
-          if (uri) return { url: uri.spec, postData: null };
-        } catch (err) {
-          console.warn(LOG, "drag-and-drop: URIFixup fallback failed", err);
-        }
-        return null;
-      }
+      const isExternalLinkDrop = U.isLinkDrop;
 
       function loadInExistingTab(tab, data, triggeringPrincipal, csp) {
         const b = tab.linkedBrowser;
@@ -1471,24 +1581,13 @@
         let inBackground = U.prefBool("browser.tabs.loadInBackground", true);
         if (event.shiftKey) inBackground = !inBackground;
 
-        const urls = [];
-        const links = dlh().dropLinks(event, true); // true → reject javascript:/data:
-        for (const l of links || []) if (l && l.url) urls.push(l.url);
+        const { urls, triggeringPrincipal, csp } = U.readDropLinks(event);
         if (!urls.length) return;
-
-        let triggeringPrincipal, csp;
-        try {
-          triggeringPrincipal = dlh().getTriggeringPrincipal(event);
-          csp = dlh().getCsp(event);
-        } catch (err) {
-          triggeringPrincipal = U.systemPrincipal();
-          csp = null;
-        }
 
         let firstAdded = null;
         let previous = null; // last tab placed, so later items follow in order
         for (const url of urls) {
-          const data = await resolveDropText(url);
+          const data = await U.resolveDropText(url);
           if (!ctx.alive) return;
           if (!data || !data.url) continue;
 
@@ -2077,6 +2176,367 @@
   });
 
   defineFeature({
+    id: "workspace-drop",
+    parent: "drag-and-drop",
+    name: "Drop into other workspaces",
+    description: "Hold a dragged tab, stack, group, link, text, image or file over the workspaces button to open its menu, then drop it on a workspace: tabs, stacks and groups move to the end of it and links open there, while you stay in the workspace you're in.",
+    default: true,
+    init(ctx) {
+      // Floorp's workspaces button is a CustomizableUI "view" widget: its menu
+      // is the panelview #workspacesToolbarButtonPanel, with a
+      // toolbarbutton.workspaceButton (data-workspaceId) per workspace. Those
+      // take Floorp's own drags, to reorder workspaces, with handlers of their
+      // own; drags of anything else are handled here first, in the capture
+      // phase, and kept from them. Switching on hover is the sub-setting
+      // workspace-drag-switch (empty init); it's done here.
+      const OPEN_DELAY_MS = 500;
+      const SWITCH_DELAY_MS = 600;
+      const WATCHDOG_MS = 250;
+      const MENU_WATCHDOG_MS = 1500;
+      const BUTTON_ID = "workspaces-toolbar-button";
+      const VIEW_ID = "workspacesToolbarButtonPanel";
+      const OVER_ATTR = "uc-drop-over";
+
+      ctx.style(`
+        #${BUTTON_ID}[${OVER_ATTR}] {
+          background-color: var(--toolbarbutton-hover-background) !important;
+        }
+        #${VIEW_ID} .workspaceButton[${OVER_ATTR}] {
+          background-color: color-mix(in srgb, currentColor 15%, transparent) !important;
+          outline: 2px solid var(--focus-outline-color, AccentColor);
+          outline-offset: -2px;
+        }
+      `);
+
+      let marked = null; // the button or workspace showing OVER_ATTR
+      function mark(el) {
+        if (marked === el) return;
+        marked?.removeAttribute(OVER_ATTR);
+        marked = el;
+        el?.setAttribute(OVER_ATTR, "true");
+      }
+      ctx.onCleanup(() => mark(null));
+
+      // What a drag carries: { tabs, source } (tabs, stacks and groups, from
+      // any window; source is the dragged tab or label), { links: true }
+      // (links, text, images, files), or null.
+      function payload(e) {
+        const dt = e.dataTransfer;
+        if (!dt || dt.mozSourceNode?.closest?.(`#${VIEW_ID}`)) return null; // Floorp's own reordering
+        const tabs = U.draggedTabs(dt);
+        if (tabs) return tabs.length ? { tabs, source: dt.mozGetDataAt(U.TAB_DROP_TYPE, 0) } : null;
+        if (U.dtHasType(dt, U.TAB_DROP_TYPE)) return null;
+        return U.isLinkDrop(e) ? { links: true } : null;
+      }
+
+      const view = () => document.getElementById(VIEW_ID);
+      const itemOf = (el) => {
+        const item = el?.closest?.(".workspaceButton");
+        return item?.closest(`#${VIEW_ID}`) ? item : null;
+      };
+      const workspaceIdOf = (item) =>
+        item.getAttribute("data-workspaceId") || item.id.replace(/^workspace-/, "");
+
+      // ---- the menu ----
+      let openTimer = 0;
+      let openedByUs = false;
+
+      function openMenu(btn) {
+        if (!btn.isConnected || btn.hasAttribute("open")) return;
+        openedByUs = true;
+        const shown = window.PanelUI?.showSubView
+          ? window.PanelUI.showSubView(VIEW_ID, btn)
+          : btn.doCommand();
+        if (shown?.then) ctx.async(shown, "opening the workspaces menu");
+      }
+
+      function hideMenu() {
+        openedByUs = false;
+        const v = view();
+        if (!v?.closest("panel")) return;
+        if (window.CustomizableUI?.hidePanelForNode) CustomizableUI.hidePanelForNode(v);
+        else v.closest("panel").hidePopup?.();
+      }
+      // A drag that opened the menu closes it when it ends.
+      const closeMenu = () => { if (openedByUs) hideMenu(); };
+      ctx.listen(window, "popuphidden", (e) => {
+        if (e.target?.id === "customizationui-widget-panel") openedByUs = false;
+      }, true);
+
+      const cancelOpen = () => { ctx.clearTimeout(openTimer); openTimer = 0; };
+
+      // ---- switching on hover (workspace-drag-switch) ----
+      let switchTimer = 0;
+      let switchTarget = null;
+      let carried = [];
+      let dragSource = null;
+      const cancelSwitch = () => { ctx.clearTimeout(switchTimer); switchTimer = 0; switchTarget = null; };
+
+      function armSwitch(ws, what) {
+        carried = (what.tabs ?? []).filter(t => t.ownerDocument === document);
+        dragSource = what.source?.ownerDocument === document ? what.source : null;
+        if (switchTarget === ws) return;
+        cancelSwitch();
+        switchTarget = ws;
+        switchTimer = ctx.timeout(() => {
+          switchTimer = 0;
+          switchTo(ws, carried, dragSource);
+        }, SWITCH_DELAY_MS);
+      }
+
+      // On the first dragover in the tab bar, Firefox freezes the layout of a
+      // tab drag in this window (every item's width, the dragged items taken
+      // out of the flow at their place, the items after them shifted, the
+      // shifts of the drag animation) and works out the drop spot by index,
+      // all once per drag. After a switch that's the old workspace's layout
+      // on the new one's tabs, so it's undone the way Firefox ends a drag,
+      // and the next dragover sets it up again from the new tab bar.
+      // Firefox moves the dragged item by the pointer's distance from where
+      // the drag started (screenX/Y), measured from the item's place in the
+      // layout; that place is new, so the start is moved with it, keeping
+      // the spot you grabbed under the pointer.
+      const DROP_SPOT_KEYS = ["animDropElementIndex", "animLastScreenPos", "dropElement", "dropBefore",
+        "translatePos", "shouldCreateGroupOnDrop", "shouldDropIntoCollapsedTabGroup"];
+      const elementToMove = (el) => el.classList?.contains("tab-group-label")
+        ? el.closest(".tab-group-label-container") ?? el
+        : el.splitview ?? el;
+      function resetTabDrag(source) {
+        const dnd = gBrowser.tabContainer.tabDragAndDrop;
+        const data = source?._dragData;
+        if (!dnd || !data) return null;
+        // Where the item sat in the layout when the drag started (the drag
+        // moves it with a transform only).
+        const el = elementToMove(source);
+        data.ucGrab = el.hasAttribute("dragtarget")
+          ? { x: data.screenX - el.screenX, y: data.screenY - el.screenY }
+          : null;
+        for (const [what, run] of [
+          ["the selected tabs' move", () => dnd.finishMoveTogetherSelectedTabs?.(source)],
+          ["the drag animation", () => dnd.finishAnimateTabMove?.()],
+          ["the tab bar's frozen layout", () => dnd._resetTabsAfterDrop?.(source)],
+        ]) {
+          try {
+            run();
+          } catch (err) {
+            ctx.fail(err, `resetting a tab drag for another workspace (${what})`);
+          }
+        }
+        for (const key of DROP_SPOT_KEYS) delete data[key];
+        clearDragPositions();
+        return data;
+      }
+
+      // During a drag Firefox gives each item it may shift a position
+      // (currentIndex), and clears it only on a drop in the tab bar, only on
+      // the items shown then. A drag dropped on a workspace instead kept them
+      // all, and one that switched kept them on the workspace it left; the
+      // next drag there shifted the wrong items (stacks and tabs drawn over
+      // each other until something was moved there). Cleared on every item at
+      // a switch and at the end of every drag from this window.
+      function clearDragPositions() {
+        const tabsEl = gBrowser.tabContainer;
+        for (const el of [...gBrowser.tabs, ...tabsEl.querySelectorAll(".tab-group-label, tab-split-view-wrapper")]) {
+          delete el.currentIndex;
+        }
+      }
+
+      // Dragged tabs of this window come along (still being dragged), so they
+      // can be dropped anywhere in the new workspace's tab bar.
+      function switchTo(ws, tabs, source) {
+        mark(null);
+        hideMenu();
+        const here = U.currentWorkspace();
+        if (!ws || ws === here) return;
+        const dragData = resetTabDrag(source);
+        const moving = tabs.filter(t => t.isConnected && !t.closing && U.workspaceOf(t) !== ws);
+        if (here && moving.includes(gBrowser.selectedTab)) {
+          // Coming back shows the tab you'd have been left on, as when Floorp
+          // switches away from a tab that stays.
+          const stay = U.tabToStayOn(ctx, new Set(moving));
+          if (stay) {
+            for (const t of document.querySelectorAll(`[${U.WS_LAST_SHOWN_ATTR}="${CSS.escape(here)}"]`)) {
+              t.removeAttribute(U.WS_LAST_SHOWN_ATTR);
+            }
+            stay.setAttribute(U.WS_LAST_SHOWN_ATTR, here);
+          }
+        }
+        U.setWorkspace(moving, ws);
+        window.workspacesFuncs.changeWorkspace(ws);
+        if (dragData) {
+          gBrowser.tabContainer._invalidateCachedVisibleTabs?.();
+          const scrollbox = gBrowser.tabContainer.arrowScrollbox;
+          if (scrollbox && !source.pinned) dragData.scrollPos = scrollbox.scrollPosition;
+          const grab = dragData.ucGrab;
+          delete dragData.ucGrab;
+          const el = elementToMove(source);
+          if (grab && el.isConnected) {
+            dragData.screenX = el.screenX + grab.x;
+            dragData.screenY = el.screenY + grab.y;
+          }
+        }
+      }
+
+      // ---- dropping on a workspace ----
+      // Tabs are moved once the drag has ended, so Firefox tidies the tab
+      // bar (drag animation, sizes) while they're still shown. A drag from
+      // another window ends there, so it's also done after a moment.
+      let pendingMove = null;
+      function runPendingMove() {
+        const job = pendingMove;
+        pendingMove = null;
+        if (job) moveTabs(job.tabs, job.ws);
+      }
+
+      function moveTabs(tabs, ws) {
+        let mine = tabs.filter(t => t.isConnected && !t.closing && t.ownerDocument === document);
+        const foreign = tabs.filter(t => t.isConnected && !t.closing && t.ownerDocument !== document);
+        if (foreign.length) {
+          const group = foreign[0].group;
+          if (group && group.tabs.length === foreign.length && group.tabs.every(t => foreign.includes(t))) {
+            const adopted = gBrowser.adoptTabGroup(group, { tabIndex: gBrowser.tabs.length });
+            mine.push(...(adopted?.tabs ?? []));
+          } else {
+            for (const t of foreign) {
+              const adopted = gBrowser.adoptTab(t, { tabIndex: gBrowser.tabs.length });
+              if (adopted) mine.push(adopted);
+            }
+          }
+        }
+        mine = mine.filter(t => U.workspaceOf(t) !== ws);
+        if (mine.length) U.moveToWorkspace(ctx, mine, ws, { toEnd: true });
+        else if (foreign.length) U.refreshWorkspace();
+      }
+
+      async function openLinks({ urls, triggeringPrincipal, csp }, ws, shiftKey) {
+        const workspace = U.workspaces().find(w => w.id === ws);
+        const userContextId = workspace?.userContextId > 0 ? workspace.userContextId : 0;
+        let principal = triggeringPrincipal;
+        if (userContextId && principal?.isNullPrincipal) {
+          principal = Services.scriptSecurityManager.createNullPrincipal({ userContextId });
+        } else if (userContextId && principal?.isContentPrincipal) {
+          principal = Services.scriptSecurityManager.principalWithOA(principal, { userContextId });
+        }
+        const opened = [];
+        for (const url of urls) {
+          const data = await U.resolveDropText(url);
+          if (!ctx.alive) return;
+          if (!data?.url) continue;
+          const tab = gBrowser.addTab(data.url, {
+            postData: data.postData,
+            triggeringPrincipal: principal,
+            csp,
+            userContextId: userContextId || undefined,
+            tabIndex: gBrowser.tabs.length,
+            index: gBrowser.tabs.length,
+            inBackground: true,
+          });
+          tab.setAttribute(U.WS_ATTR, ws);
+          opened.push(tab);
+        }
+        if (!opened.length) return;
+        U.refreshWorkspace();
+        if (ws === U.currentWorkspace()) {
+          let inBackground = U.prefBool("browser.tabs.loadInBackground", true);
+          if (shiftKey) inBackground = !inBackground;
+          if (!inBackground) gBrowser.selectedTab = opened[0];
+        }
+      }
+
+      // ---- the drag ----
+      // dragover fires again and again while a drag is held still, so going
+      // quiet means the drag left the window or ended elsewhere.
+      let watchdog = 0;
+      let menuWatchdog = 0;
+      function reset() {
+        cancelOpen();
+        cancelSwitch();
+        mark(null);
+      }
+      function bump() {
+        ctx.clearTimeout(watchdog);
+        watchdog = ctx.timeout(reset, WATCHDOG_MS);
+        ctx.clearTimeout(menuWatchdog);
+        if (openedByUs) menuWatchdog = ctx.timeout(closeMenu, MENU_WATCHDOG_MS);
+      }
+
+      ctx.listen(window, "dragover", (e) => {
+        bump();
+        const btn = e.target?.closest?.(`#${BUTTON_ID}`);
+        const item = btn ? null : itemOf(e.target);
+        const what = (btn || item) && U.workspacesOn() ? payload(e) : null;
+        if (!what) {
+          reset();
+          return;
+        }
+        if (btn) {
+          cancelSwitch();
+          mark(btn);
+          if (!openTimer && !btn.hasAttribute("open")) {
+            openTimer = ctx.timeout(() => {
+              openTimer = 0;
+              if (marked === btn) openMenu(btn);
+            }, OPEN_DELAY_MS);
+          }
+          return;
+        }
+        cancelOpen();
+        const ws = workspaceIdOf(item);
+        e.stopPropagation(); // Floorp's reordering handlers
+        const already = what.tabs?.every(t => t.ownerDocument === document && U.workspaceOf(t) === ws);
+        if (already) {
+          mark(null);
+        } else {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = what.tabs ? "move" : "link";
+          mark(item);
+        }
+        if (ctx.isActive("workspace-drag-switch")) armSwitch(ws, what);
+      }, true);
+
+      ctx.listen(window, "drop", (e) => {
+        const item = itemOf(e.target);
+        const what = item && U.workspacesOn() ? payload(e) : null;
+        reset();
+        if (!what) {
+          closeMenu();
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        const ws = workspaceIdOf(item);
+        if (what.tabs) {
+          pendingMove = { tabs: what.tabs, ws };
+          ctx.timeout(runPendingMove, 300);
+          hideMenu();
+        } else {
+          const links = U.readDropLinks(e);
+          hideMenu();
+          ctx.async(openLinks(links, ws, e.shiftKey), "opening a drop in a workspace");
+        }
+      }, true);
+
+      // Bubble phase: after Firefox's tab bar has handled its own dragend.
+      ctx.listen(window, "dragend", () => {
+        reset();
+        closeMenu();
+        if (pendingMove) ctx.timeout(runPendingMove);
+        clearDragPositions();
+      });
+    },
+  });
+
+  defineFeature({
+    id: "workspace-drag-switch",
+    parent: "drag-and-drop",
+    requires: ["workspace-drop"],
+    name: "Switch workspaces while dragging",
+    description: "Hold a drag over a workspace in the workspaces menu to switch to it, taking dragged tabs, stacks and groups along, so you can drop them exactly where you want in its tab bar.",
+    default: false,
+    // Done by workspace-drop, while this runs.
+    init() {},
+  });
+
+  defineFeature({
     id: "tab-overflow",
     category: "fixes",
     name: "Double new tab button",
@@ -2307,11 +2767,8 @@
         for (const tab of this.contextTabs ?? []) {
           for (const t of tab.splitview?.tabs ?? [tab]) moving.add(t);
         }
-        const selected = gBrowser.selectedTab;
-        if (moving.has(selected)) {
-          const pick = ctx.isActive("close-stays-in-stack")
-            ? U.closeTarget(selected, moving, { leftFirst: ctx.isActive("close-prefer-left") })
-            : gBrowser.visibleTabs.find(t => !moving.has(t) && !t.closing);
+        if (moving.has(gBrowser.selectedTab)) {
+          const pick = U.tabToStayOn(ctx, moving);
           if (pick) gBrowser.selectedTab = pick;
         }
         const result = next(group, ...rest);
@@ -5100,39 +5557,7 @@
         return /^url\("?(.*?)"?\)$/.exec(css)?.[1] ?? null;
       }
 
-      function openTabHere() {
-        const here = U.workspaces().find(w => w.id === U.currentWorkspace());
-        return gBrowser.addTab(window.BROWSER_NEW_TAB_URL ?? "about:newtab", {
-          tabIndex: gBrowser.tabs.length,
-          index: gBrowser.tabs.length, // older Firefox reads index
-          userContextId: here?.userContextId > 0 ? here.userContextId : undefined,
-          triggeringPrincipal: U.systemPrincipal(),
-        });
-      }
-
-      function moveGroup(group, workspaceId) {
-        const tabs = [...group.tabs];
-        // Firefox can't hide the selected tab: switch to a tab staying here.
-        // With "Stay in the stack when closing tabs", the one closing it
-        // would pick; otherwise Floorp's choice, the workspace's first tab.
-        const selected = gBrowser.selectedTab;
-        if (tabs.includes(selected)) {
-          const moving = new Set(tabs);
-          const pick = ctx.isActive("close-stays-in-stack")
-            ? U.closeTarget(selected, moving, { leftFirst: ctx.isActive("close-prefer-left") })
-            : gBrowser.visibleTabs.find(t => !moving.has(t) && !t.closing);
-          gBrowser.selectedTab = pick ?? openTabHere();
-        }
-        for (const t of tabs) {
-          const was = U.workspaceOf(t);
-          t.setAttribute(U.WS_ATTR, workspaceId);
-          // "Last tab shown in that workspace" belongs to the old one.
-          if (t.getAttribute(U.WS_LAST_SHOWN_ATTR)?.replace(/[{}]/g, "") === was) {
-            t.removeAttribute(U.WS_LAST_SHOWN_ATTR);
-          }
-        }
-        U.refreshWorkspace();
-      }
+      const moveGroup = (group, workspaceId) => U.moveToWorkspace(ctx, [...group.tabs], workspaceId);
 
       function fillList(list) {
         list.replaceChildren();
