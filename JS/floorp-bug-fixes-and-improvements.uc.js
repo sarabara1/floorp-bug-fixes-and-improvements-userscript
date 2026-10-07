@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.3.0
+// @version        1.3.1
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -2508,8 +2508,19 @@
       // The times are read when the first tab of a stack leaves: as each moved
       // tab closes here, this window selects the next one (close-stays-in-
       // stack picks the stack neighbour), which would then look just used.
+      // Firefox selects it before TabClose, so when the tab you were on is the
+      // first to leave (a stack's first tab), the times are the ones read just
+      // before that switch, when Firefox picked the tab to switch to.
       let moved = [];
       const timeBefore = new Map(); // old tab → lastAccessed before the move
+      let blurred = null; // { tab, times }: its stack's times before switching away from it
+      ctx.optional(() => ctx.hook(gBrowser, "_findTabToBlurTo", (next, tab, ...rest) => {
+        if (tab?.selected && U.stackOf(tab)) {
+          blurred = { tab, times: new Map(tab.group.tabs.map(t => [t, t.lastAccessed])) };
+          ctx.microtask(() => { blurred = null; });
+        }
+        return next(tab, ...rest);
+      }, { priority: -1 }), "A stack moved while you're on its first tab may open on its second");
       function finish() {
         const batch = moved;
         moved = [];
@@ -2538,7 +2549,8 @@
         const old = e.target;
         if (!timeBefore.has(old)) {
           // The selected tab reads as now, which is right: it's the one you were on.
-          for (const t of old.group?.tabs ?? [old]) timeBefore.set(t, t.lastAccessed);
+          const times = blurred?.tab === old ? blurred.times : null;
+          for (const t of old.group?.tabs ?? [old]) timeBefore.set(t, times?.get(t) ?? t.lastAccessed);
         }
         const last = timeBefore.get(old);
         if (!tab.selected) tab.updateLastAccessed(last);
