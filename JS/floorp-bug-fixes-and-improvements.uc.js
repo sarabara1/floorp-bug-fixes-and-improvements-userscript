@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.4.0
+// @version        1.4.1
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -6121,7 +6121,10 @@
           t.getAnimations().some(a => a instanceof CSSTransition && a.playState === "running");
         const all = gBrowser.tabs.filter(t => !t.selected && !t.multiselected && !looksSelected(t) && visible(t));
         const steady = all.filter(t => !settling(t));
-        const normals = steady.length ? steady : all;
+        // A tab in a split view is laid out as half of it, not like a tab of
+        // its own: only used when there's nothing else.
+        const plain = (list) => (list.some(t => !t.splitview) ? list.filter(t => !t.splitview) : list);
+        const normals = plain(steady.length ? steady : all);
         const selectedTab = gBrowser.selectedTab;
         // With no other normal tab in view (e.g. the selected tab is the only
         // one in this workspace besides stacks), the selected tab stands in,
@@ -6130,18 +6133,21 @@
           : selectedTab && !selectedTab.multiselected && visible(selectedTab) ? selectedTab : null;
         // With every tab in a stack, one of the stacks' tabs is probed (see
         // canProbe): an unselected one, preferably with an icon, or else the
-        // selected one, read as if it weren't selected.
+        // selected one, read as if it weren't selected. Not one in a split
+        // view: Floorp squashes the split view, not its tabs, and a probed
+        // one measured as nonsense, or as nothing at all.
         let probe = null;
         if (!normals.length && !standIn) {
-          const members = gBrowser.tabs.filter(t => !t.hidden && !t.closing && !t.pinned && U.stackOf(t) &&
+          const members = gBrowser.tabs.filter(t => !t.hidden && !t.closing && !t.pinned && !t.splitview && U.stackOf(t) &&
             U.stackOf(t).style.display !== "none" && complete(partsOf(t)));
           const unselected = members.filter(t => !t.selected && !t.multiselected && !looksSelected(t));
           probe = unselected.find(t => t.hasAttribute("image")) ?? unselected[0] ??
             (members.includes(selectedTab) && !selectedTab.multiselected ? selectedTab : null);
           if (probe === selectedTab) standIn = selectedTab;
         }
-        // The selected tab is probed for its own look when it's a stack's.
-        probing = new Set([probe, U.stackOf(selectedTab) ? selectedTab : null].filter(Boolean));
+        // The selected tab is probed for its own look when it's a stack's
+        // (not in a split view, as above).
+        probing = new Set([probe, U.stackOf(selectedTab) && !selectedTab.splitview ? selectedTab : null].filter(Boolean));
         let normalTab = normals.find(hasIcon) ?? normals[0] ?? standIn ?? probe;
         // A tab that's still opening isn't read (its sizes are a sliver's):
         // the look stays as it was and is read again once it has settled.
@@ -6156,6 +6162,11 @@
           if (complete(p)) {
             const transition = getComputedStyle(p.bg).transition;
             const [normal, layout, tabTop] = readTab(p, p.tab, false, () => [lookOf(p), layoutOf(p), p.tab.getBoundingClientRect().top]);
+            if (!normal.box) {
+              // It had no layout after all: the look stays as it was.
+              standIn = null;
+              return;
+            }
             // What remembered measurements belong to: the normal tab's layout,
             // which a design or theme switch changes. A selected layout or
             // close button from Fluerial must not be used under Photon.
@@ -6209,10 +6220,24 @@
           if (settling(selectedTab)) {
             ctx.timeout(refresh, 250); // the selected look stays until it has settled
           } else if (looksSelected(selectedTab)) {
-            const sel = readTab(sp, sp.tab, false, () => lookOf(sp));
-            if (sel.box) selectedLayout = { box: sel.box, contentMid: sel.contentMid, themeKey };
-            else if (selectedLayout?.themeKey === themeKey) Object.assign(sel, { box: selectedLayout.box, contentMid: selectedLayout.contentMid });
-            looks.selected = sel;
+            // A split view's tab in a stack is laid out as half of the
+            // (squashed) split view, not as a tab: its box made the open
+            // stack's chip narrower, and the next stack slid over it. The
+            // selected look of this theme is kept, or its colors are read
+            // with the shape of a selected tab seen before (or a normal one).
+            const splitInStack = !!(selectedTab.splitview && U.stackOf(selectedTab));
+            if (!(splitInStack && looks.selected?.themeKey === themeKey)) {
+              const sel = readTab(sp, sp.tab, false, () => lookOf(sp));
+              if (splitInStack) {
+                const shape = selectedLayout?.themeKey === themeKey ? selectedLayout : looks.normal;
+                Object.assign(sel, { box: shape.box, contentMid: shape.contentMid });
+              } else if (sel.box) {
+                selectedLayout = { box: sel.box, contentMid: sel.contentMid, themeKey };
+              } else if (selectedLayout?.themeKey === themeKey) {
+                Object.assign(sel, { box: selectedLayout.box, contentMid: selectedLayout.contentMid });
+              }
+              looks.selected = { ...sel, themeKey };
+            }
           } else {
             ctx.timeout(refresh, 150); // not painted as selected yet
           }
