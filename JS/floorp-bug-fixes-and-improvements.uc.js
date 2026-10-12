@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.4.1
+// @version        1.4.2
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -3039,7 +3039,7 @@
     id: "stack-container-line",
     category: "stacks",
     name: "Containers",
-    description: "Stack tabs in a container show the container's colored line, like normal tabs. A stack or group tab opened in a new container tab or reopened in a private container stays in its stack or group, next to where it was.",
+    description: "Stack tabs in a container show the container's colored line, like normal tabs. A stack or group tab opened in a new container tab or reopened in a private container stays in its stack or group, next to where it was. A link opened in a private container from a stack or group tab opens in that stack or group.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -3095,11 +3095,27 @@
       // synchronously from the menu item's command, each with its old tab's
       // address, which tells which tab it replaces (Firefox skips tabs
       // already in that container).
+      //
+      // Floorp's "Open in Private Container" on a link opens a blank tab with
+      // no opener, so not related to the current tab (unless Floorp's "next
+      // to current" setting is on): it went to the end of the tab bar, also
+      // from a stack tab. Its addTab call is made synchronously from the
+      // item's command too. From a stack or group tab, it's given the group
+      // and, like any link (Firefox's insertRelatedAfterCurrent), a place
+      // after that tab, unless Floorp's setting says the end.
       const REOPEN_POPUP = "context_reopenInContainerPopupMenu";
       const PRIVATE_ITEM = "context_toggleToPrivateContainer";
+      const PRIVATE_LINK_ITEM = "open_in_private_container";
       let reopening = null; // the tabs the menu acts on, until each one's new tab is made
+      let linkFrom = null; // the tab whose page has the link, until its new tab is made
       ctx.listen(window, "command", (e) => {
         const item = e.target;
+        if (item?.id === PRIVATE_LINK_ITEM) {
+          const browser = window.gContextMenu?.browser;
+          linkFrom = (browser && gBrowser.getTabForBrowser(browser)) || gBrowser.selectedTab;
+          ctx.timeout(() => { linkFrom = null; });
+          return;
+        }
         const isReopen = item?.id === PRIVATE_ITEM
           || (item?.hasAttribute?.("data-usercontextid") && item.parentNode?.id === REOPEN_POPUP);
         if (!isReopen) return;
@@ -3113,6 +3129,15 @@
       }, true);
 
       ctx.hook(gBrowser, "addTab", function (next, uri, opts, ...rest) {
+        if (linkFrom && opts?.userContextId) {
+          const from = linkFrom;
+          linkFrom = null;
+          const group = from.pinned ? null : from.group;
+          if (!group?.isConnected || opts.tabGroup) return next(uri, opts, ...rest);
+          const atEnd = Services.prefs.getIntPref("floorp.browser.tabs.openNewTabPosition", -1) === 0;
+          const related = !atEnd && from === gBrowser.selectedTab;
+          return next(uri, { ...opts, tabGroup: group, ...(related && { relatedToCurrent: true }) }, ...rest);
+        }
         const i = reopening ? reopening.findIndex(t => t.linkedBrowser?.currentURI?.spec === uri) : -1;
         if (i < 0) return next(uri, opts, ...rest);
         const [old] = reopening.splice(i, 1);
