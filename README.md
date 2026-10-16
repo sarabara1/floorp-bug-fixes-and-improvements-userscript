@@ -1,31 +1,10 @@
 # Floorp Bug Fixes & Improvements
 
-Floorp is buggy, and its tab stacks leave a lot to be desired: they're clunky and frustrating to use. This script fixes bugs, makes stacks look and behave like normal tabs (much like Vivaldi's tab stacks), and adds some useful extra features.
+Floorp is buggy, and its tab stacks leave a lot to be desired, they're clunky and frustrating to use. This script fixes bugs, makes stacks look and behave like normal tabs (much like Vivaldi's tab stacks), and adds some useful extra features.
 
-It's a single file. Every feature can be turned on or off on its own from a built-in settings page, and changes apply right away, with no restart.
-
-# Using it
-
-Open the settings page from any of these:
-- **Tools → Floorp Bug Fixes & Improvements** in the menu bar (press Alt if it's hidden)
-- right-click the tab bar → **Floorp Bug Fixes & Improvements**
-- the toolbar button, which you can add from **Customize Toolbar**
-
-On the page:
-- **Turn features on or off** with the switch next to each one. Bug fixes and stack improvements are on by default; the other features are off until you turn them on. Some features have extra options nested under them, which only work while the main feature is on.
-- **Search** for a feature, or jump between categories on the left.
-- **Reset to defaults** puts every switch back to how it started.
-- Your choices apply to every open window and are kept across restarts.
-
-**If something breaks.** If a Floorp update breaks a feature, only that feature stops; everything else keeps working. The settings page marks it *Failed to load*, *Unavailable*, *Partly working* or *Errors*, and the menu entries show how many features have problems. Click **Details** to see what went wrong and **Try again**, or use **Copy diagnostics** to include the details in a bug report.
-
-**Updates.** The script checks GitHub for a newer version every 12 hours. You can turn that off, or check now, at the top of the settings page. When there's an update, the settings page says so with a link to get it, and the menu entries show "(Update available)". It only tells you; replacing the file is up to you (see *Updating* below).
-
-**Turning everything off.** To turn every feature off without uninstalling, set `uc.floorp-improvements.paused` to `true` in `about:config`. The settings page stays available, so you can turn it back on from there.
+Every feature can be turned on or off from a built-in settings page, and changes apply right away.
 
 # Features
-
-The same list, in the same order, as on the settings page. Sub-settings are listed under their feature.
 
 ### Bug Fixes (on by default)
 
@@ -46,7 +25,7 @@ Fixes for bugs in Floorp's tab stacks, tab bar, workspaces and sidebar.
 
 Make stacks and the tabs inside them look and behave like normal tabs.
 
-- **Containers**: Stack tabs in a container show the container's colored line, like normal tabs. A stack or group tab opened in a new container tab or reopened in a private container stays in its stack or group, next to where it was.
+- **Containers**: Stack tabs in a container show the container's colored line, like normal tabs. A stack or group tab opened in a new container tab stays in its stack or group, next to where it was.
 - **Audio button**: Stack tabs and stacks show the speaker button while playing sound. Click it to mute or unmute.
 - **Loading animation**: Stack tabs show the loading animation while their page loads.
 - **Normal tab buttons**: Stack tabs and stacks have their close button at the right end, keep their icon visible on hover, and use the normal pointer, like normal tabs.
@@ -103,6 +82,25 @@ Improvements that aren't specific to stacks.
   - *Ask before closing marked tabs* (off by default): Asks before closing a marked tab. When closing several tabs at once, you can keep the marked ones and close the rest.
 - **Scroll to switch workspaces**: Scroll the mouse wheel over the Workspaces button to switch workspaces, stopping at the first and last.
 - **One Floorp Hub and Settings tab**: Floorp Hub and Settings each open in only one tab, with the normal tabs; opening them again switches to that tab.
+
+# Using it
+
+Open the settings page from any of these:
+- **Tools → Floorp Bug Fixes & Improvements** in the menu bar (press Alt if it's hidden)
+- right-click the tab bar → **Floorp Bug Fixes & Improvements**
+- the toolbar button, which you can add from **Customize Toolbar**
+
+On the page:
+- **Turn features on or off** with the switch next to each one. Bug fixes and stack improvements are on by default; the other features are off until you turn them on. Some features have extra options nested under them, which only work while the main feature is on.
+- **Search** for a feature, or jump between categories on the left.
+- **Reset to defaults** puts every switch back to how it started.
+- Your choices apply to every open window and are kept across restarts.
+
+**If something breaks.** If a Floorp update breaks a feature, only that feature stops; everything else keeps working. The settings page marks it *Failed to load*, *Unavailable*, *Partly working* or *Errors*, and the menu entries show how many features have problems. Click **Details** to see what went wrong and **Try again**, or use **Copy diagnostics** to include the details in a bug report.
+
+**Updates.** The script checks GitHub for a newer version every 12 hours. You can turn that off, or check now, at the top of the settings page. When there's an update, the settings page says so with a link to get it, and the menu entries show "(Update available)". It only tells you; replacing the file is up to you (see *Updating* below).
+
+**Turning everything off.** To turn every feature off without uninstalling, set `uc.floorp-improvements.paused` to `true` in `about:config`. The settings page stays available, so you can turn it back on from there.
 
 # Installation
 
