@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.4.2
+// @version        1.4.3
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -6232,9 +6232,13 @@
             else close = (closeCache?.themeKey === themeKey ? closeCache : null) ?? closeFallback(p, layout);
             const closeHoverBg = readTab(p, p.close, true, () => getComputedStyle(p.close).backgroundColor);
             // The chip container's top against the tab's (both are tab strip
-            // items, but a theme may pad tabs).
-            const chip = document.querySelector(`${STACK} > .tab-group-label-container`);
-            const containerShift = chip ? chip.getBoundingClientRect().top - tabTop : 0;
+            // items, but a theme may pad tabs), on a stack that's shown: another
+            // workspace's stacks are hidden and read as 0, which put every
+            // chip's box 1px low in a window that isn't maximized (its tabs
+            // start at 1px), cutting off the outline's bottom edge.
+            const chip = [...document.querySelectorAll(`${STACK} > .tab-group-label-container`)]
+              .find(c => c.getBoundingClientRect().height > 0);
+            const containerShift = chip ? chip.getBoundingClientRect().top - tabTop : (geometry?.containerShift ?? 0);
             geometry = { ...layout, ...icon, ...close, closeHoverBg, transition, containerShift };
             looks = { ...(looks || {}), normal, hover };
           }
