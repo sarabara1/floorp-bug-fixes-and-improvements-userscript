@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.4.6
+// @version        1.4.7
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -2704,6 +2704,30 @@
       ctx.style(`
         #sidebar-box {
           max-width: 75vw !important;
+        }
+      `);
+    },
+  });
+
+  defineFeature({
+    id: "selected-container-line",
+    category: "fixes",
+    name: "Container line on the selected tab",
+    description: "In the Lepton, Photon and Protonfix designs, the selected tab shows its container's colored line again, across the tab.",
+    default: true,
+    init(ctx) {
+      // Lepton's stylesheet (Photon and Protonfix use it too) draws a
+      // container tab's line with .tab-content::before, a quarter of the tab
+      // wide, and the whole tab for the selected one: calc(100% -
+      // (var(--tab-inline-padding) + var(--tab-inner-inline-margin)) * 2).
+      // Firefox renamed both variables (--tab-padding-inline,
+      // --tab-margin-inline-inner), so that width is invalid, falls back to
+      // auto, and an empty absolute box is 0px wide. The old names get the
+      // new values, only where the line is (:where keeps a theme's own wins).
+      ctx.style(`
+        :where(.tabbrowser-tab .tab-content) {
+          --tab-inline-padding: var(--tab-padding-inline, 8px);
+          --tab-inner-inline-margin: var(--tab-margin-inline-inner, 8px);
         }
       `);
     },
