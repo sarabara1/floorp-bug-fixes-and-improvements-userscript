@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.4.4
+// @version        1.4.5
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -6137,17 +6137,18 @@
 
     // The tab's own box: its height, the margins around it and how wide it
     // may get. A probed tab is sized by sizeProbe, so its widths come from
-    // the variables tabs.css sizes tabs with (or the last normal tab's).
+    // the variables tabs are sized with (or the last normal tab's).
     function tabOf(p, probed) {
       const ts = getComputedStyle(p.tab);
-      const out = { height: p.tab.getBoundingClientRect().height, mt: px(ts.marginTop), mb: px(ts.marginBottom) };
-      if (!probed) return { ...out, minW: px(ts.minWidth), maxW: px(ts.maxWidth) || 225, ms: px(ts.marginInlineStart), me: px(ts.marginInlineEnd) };
       const v = (n) => px(ts.getPropertyValue(n));
-      return {
-        ...out,
-        minW: (v("--tab-min-width-pref") || v("--tab-min-width") || 76) + v("--tab-min-width-uidensity"),
-        maxW: v("--tab-max-width") || 225, ms: 0, me: 0,
-      };
+      // Floorp's minimum tab width setting, which Floorp forces on every
+      // tab, else Firefox's (browser.tabs.tabMinWidth plus touch density's).
+      // Also when Floorp unsets it while a split view is open (tabs then have
+      // no minimum, and stack tabs would shrink to nothing).
+      const minVar = v("--floorp-tab-min-width") || (v("--tab-min-width-pref") || v("--tab-min-width") || 76) + v("--tab-min-width-uidensity");
+      const out = { height: p.tab.getBoundingClientRect().height, mt: px(ts.marginTop), mb: px(ts.marginBottom) };
+      if (!probed) return { ...out, minW: px(ts.minWidth) || minVar, maxW: px(ts.maxWidth) || 225, ms: px(ts.marginInlineStart), me: px(ts.marginInlineEnd) };
+      return { ...out, minW: minVar, maxW: v("--tab-max-width") || 225, ms: 0, me: 0 };
     }
 
     // The thin line a theme draws between tabs (Lepton, Photon, Protonfix and
@@ -6353,7 +6354,8 @@
           themeKey = JSON.stringify([layout.bgHeight, layout.contentShift, normal.box, layout.font.size, layout.font.family],
             (k, v) => (typeof v === "number" ? Math.round(v * 10) / 10 : v));
           if (!probed) tabCache = { ...tab, themeKey };
-          else if (tabCache?.themeKey === themeKey) Object.assign(tab, { minW: tabCache.minW, maxW: tabCache.maxW, ms: tabCache.ms, me: tabCache.me });
+          // Not the minimum width: the setting may have changed since.
+          else if (tabCache?.themeKey === themeKey) Object.assign(tab, { maxW: tabCache.maxW, ms: tabCache.ms, me: tabCache.me });
           const iconTab = (probe === normalTab && probe.hasAttribute("image") ? probe : null) ??
             [normalTab, ...normals, selectedTab].find(t => t && visible(t) && hasIcon(t)) ?? null;
           const ip = iconTab && partsOf(iconTab);
@@ -6586,7 +6588,7 @@
     id: "stacks-look-like-tabs",
     category: "appearance",
     name: "Stacks look like normal tabs (Experimental)",
-    description: "Stacks look exactly like normal tabs in whatever theme and design you use: the same shape, spacing, text, icon and close button, and the same hover and selected colors. Only their colored outline and tab count set them apart.",
+    description: "Stacks look exactly like normal tabs in whatever theme and design you use: the same shape, spacing, text, icon and close button, and the same hover and selected colors. They shrink down to your minimum tab width, like tabs. Only their colored outline and tab count set them apart.",
     default: false,
     init(ctx) {
       // The chip copies a real tab (see TabLook). The stack's colored outline
@@ -6689,6 +6691,8 @@
         const outlineActive = "color-mix(in srgb, var(--tab-group-color-invert, currentColor) 85%, white 15%)";
         return `
           ${N} {
+            /* Shrinks as far as a tab does (Floorp's own chips stop at 76px). */
+            min-width: ${g.tab.minW}px !important;
             padding-inline: 0 !important;
             /* The boxes may start below the container's top (where a theme's
                tabs start lower), and that strip would be part of the toolbar's
@@ -6853,7 +6857,7 @@
     id: "stack-tabs-look-like-tabs",
     category: "appearance",
     name: "Stack tabs look like normal tabs (Experimental)",
-    description: "Tabs in the stack bar look exactly like normal tabs in whatever theme and design you use: the same size, shape, spacing, text, icon, close button and separators, and the same hover and selected colors. The stack bar is as tall as the tab bar.",
+    description: "Tabs in the stack bar look exactly like normal tabs in whatever theme and design you use: the same size, shape, spacing, text, icon, close button and separators, and the same hover and selected colors. They shrink down to your minimum tab width before the stack bar scrolls. The stack bar is as tall as the tab bar.",
     default: false,
     init(ctx) {
       // A stack tab copies a real tab (see TabLook), at a tab's size: the
