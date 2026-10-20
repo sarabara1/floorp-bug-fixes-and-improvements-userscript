@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.4.8
+// @version        1.4.9
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -7247,7 +7247,14 @@
             border-radius: ${c.radius} !important;
             opacity: ${c.opacity} !important;`;
         };
-        const line = normal.container;
+        // Full-width container lines: every state's line as wide as the
+        // selected tab's (its own place and look otherwise).
+        // A selected line read 0px wide (Lepton's, without Container line on
+        // the selected tab) is taken as the same distance from both ends.
+        const sel = ctx.isActive("full-width-container-lines") ? (selected.container ?? normal.container) : null;
+        const fullLine = sel && sel.width < 1 ? { ...sel, end: sel.start, width: sel.tabW - 2 * sel.start } : sel;
+        const widen = (c) => (c && fullLine ? { ...c, start: fullLine.start, end: fullLine.end, width: fullLine.width, tabW: fullLine.tabW } : c);
+        const line = widen(normal.container);
         const lineMove = [normal, hover, selected].map(l => l.container?.transition).find(Boolean);
         const containerCss = `
           ${P}[usercontextid]::before {
@@ -7256,7 +7263,7 @@
             pointer-events: none !important;
             transition: ${lineMove ? ["width", "inset-inline-start", "inset-block-start", "height", "opacity"].map(p => `${p} ${lineMove}`).join(", ") : "none"} !important;
           }
-          ${H}[usercontextid]::before { ${lineRules(hover.container === undefined ? line : hover.container)} }
+          ${H}[usercontextid]::before { ${lineRules(hover.container === undefined ? line : widen(hover.container))} }
           ${S}[usercontextid]::before { ${lineRules(selected.container === undefined ? line : selected.container)} }`;
 
         const glyph = g.closeIcon || 12;
@@ -7468,6 +7475,29 @@
         }
         :root #tabbrowser-tabs tab-group[data-floorp-stack] .tab-group-label-hover-highlight:has(> .tab-group-label[uc-auto-title]) {
           max-width: var(--tab-max-width, 225px);
+        }
+      `);
+    },
+  });
+
+  defineFeature({
+    id: "full-width-container-lines",
+    category: "appearance",
+    name: "Full-width container lines",
+    description: "A container tab's colored line spans the whole tab even when the tab isn't selected, on normal tabs and on stack tabs.",
+    default: false,
+    init(ctx) {
+      // Lepton's stylesheet (Lepton, Photon, Protonfix) draws the line under
+      // the title a quarter of the tab wide, and the whole tab (this width)
+      // when selected; it keeps its own opacity and transition. Other designs
+      // draw Firefox's line, which spans the tab already, and so does
+      // Containers' own line on stack tabs. Stack tabs that copy the tab look
+      // get the selected tab's line in every state (ctx.isActive in
+      // stack-tabs-look-like-tabs). Tabs being read for that look are left
+      // alone, so the reading stays the design's own.
+      ctx.style(`
+        :root .tabbrowser-tab[usercontextid]:not([pinned], [uc-tablike-reading]) .tab-content::before {
+          width: calc(100% - (var(--tab-padding-inline, 8px) + var(--tab-margin-inline-inner, 8px)) * 2);
         }
       `);
     },
