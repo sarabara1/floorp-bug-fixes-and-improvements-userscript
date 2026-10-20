@@ -75,6 +75,7 @@ Optional style changes.
 - **Stack tabs look like normal tabs (Experimental)**: Tabs in the stack bar look exactly like normal tabs in whatever theme and design you use: the same size, shape, spacing, text, icon, close button, separators and container line (with its animation), and the same hover and selected colors. They shrink down to your minimum tab width before the stack bar scrolls. The stack bar is as tall as the tab bar.
 - **Compact stacks**: Stacks take up less room than normal tabs, so more of them fit in the tab bar. A stack whose name doesn't fit grows to show it, up to a normal tab's width.
   - *Full width for auto-titled stacks* (off by default): With Auto-title stacks on, auto-titled stacks are as wide as a normal tab, while named stacks stay compact.
+- **Full-width container lines**: A container tab's colored line spans the whole tab even when the tab isn't selected, on normal tabs and on stack tabs.
 
 ### Browser (off by default)
 
