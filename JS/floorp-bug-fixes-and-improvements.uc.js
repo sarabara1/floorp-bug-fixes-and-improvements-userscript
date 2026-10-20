@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.4.5
+// @version        1.4.6
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -3212,8 +3212,8 @@
       const AUDIO_ATTRS = ["soundplaying", "soundplaying-scheduledremoval", "muted", "activemedia-blocked"];
       const THEME_VARS = [
         [tab => tab, [
-          "--tab-icon-end-margin",
-          "--tab-min-width-extra-icons",
+          "--tab-icon-margin-inline-end",
+          "--tab-icon-end-margin", // its name in older Firefox
           "--uc-sound-tab-icon-position-x",
           "--uc-sound-tab-icon-position-y",
         ]],
@@ -3243,16 +3243,18 @@
           }
         }
 
-        /* A global tab with the button grows its min-width and changes the
-           favicon's end margin; the theme may also shift the title. */
-        .floorp-stack-tab[uc-audio] {
-          min-width: calc(var(--tab-min-width, 76px) + var(--tab-min-width-extra-icons, 0px)) !important;
-        }
+        /* A global tab with the button changes the favicon's end margin, and
+           the theme may shift the title's text inside the title's box (whose
+           end stays put; moving the box ran it into the close button). Its
+           width doesn't change: Floorp's minimum tab width holds every tab. */
         .floorp-stack-tab[uc-audio] > .floorp-stack-tab-iconbox {
-          margin-inline-end: var(--tab-icon-end-margin, 6px);
+          margin-inline-end: var(--tab-icon-margin-inline-end, var(--tab-icon-end-margin, 6px));
         }
-        .floorp-stack-tab[uc-audio] > .floorp-stack-tab-label {
-          transform: translateX(var(--uc-sound-tab-label-position-x, 0px));
+        .floorp-stack-tab[uc-audio] > .floorp-stack-tab-label:dir(ltr) {
+          padding-inline-start: max(0px, var(--uc-sound-tab-label-position-x, 0px));
+        }
+        .floorp-stack-tab[uc-audio] > .floorp-stack-tab-label:dir(rtl) {
+          padding-inline-start: max(0px, -1 * var(--uc-sound-tab-label-position-x, 0px));
         }
 
         /* Chip: the title is the label's ::before; sit in front of it, just
@@ -6029,6 +6031,21 @@
       }
     }
 
+    // A hovered close button's background and color. Pointing at it hovers
+    // the tab too, and themes tint the background with the tab's (hovered)
+    // text color, so both are hovered.
+    function closeHoverOf(p) {
+      return readTab(p, p.tab, true, () => {
+        IU.addPseudoClassLock(p.close, ":hover", true);
+        try {
+          const s = getComputedStyle(p.close);
+          return { closeHoverBg: s.backgroundColor, closeHoverColor: s.color };
+        } finally {
+          IU.removePseudoClassLock(p.close, ":hover");
+        }
+      });
+    }
+
     // The state-dependent look of a tab.
     function lookOf(p) {
       // The background's box inside the tab. Themes may size it with auto
@@ -6092,6 +6109,7 @@
         closeShown,
         closeOpacity: close.opacity,
         closeFillOpacity: close.fillOpacity,
+        closeColor: close.color,
         // Its size in this state: Firefox narrows an unhovered tab's close
         // button (no start padding), so the title gets more room.
         closeBoxW: px(close.width) + (close.boxSizing === "border-box" ? 0 : px(close.paddingLeft) + px(close.paddingRight)),
@@ -6235,31 +6253,61 @@
     // showed, and the button's size, is remembered per theme and
     // close-button mode (kept in a pref, for a start with only stacks) and
     // used when a stack's tab had to be read. Returns the close button to use.
+    // The selected tab's is kept too (when it's a normal tab), so the stack
+    // bar can use another mode's whole look (see memoClose).
     const CLOSE_MEMO_PREF = "uc.floorp-improvements-cache.tablike-close";
     const readMemo = () => {
       try { return JSON.parse(Services.prefs.getStringPref(CLOSE_MEMO_PREF, "{}")) || {}; } catch { return {}; }
     };
-    function rememberClose(probed, normal, hover, close) {
-      const key = `${themeKey}|${gBrowser.tabContainer.getAttribute("closebuttons") ?? ""}`;
+    // Per design and theme as well as layout: Proton and Protonfix tabs
+    // measure the same but draw their close buttons differently.
+    const memoKey = (mode) => {
+      let design = "";
+      try { design = JSON.parse(Services.prefs.getStringPref("floorp.design.configs", "{}"))?.globalConfigs?.userInterface ?? ""; } catch {}
+      return `${themeKey}|${design}|${Services.prefs.getStringPref("extensions.activeThemeID", "")}|${mode}`;
+    };
+    const closeMode = () => gBrowser.tabContainer.getAttribute("closebuttons") ?? "";
+    // Not its color: that's the tab's text color, which the window's focus
+    // changes, and the current reading has it.
+    const pickClose = (l) => ({
+      closeShown: l.closeShown, closeOpacity: l.closeOpacity, closeFillOpacity: l.closeFillOpacity,
+      closeBoxW: l.closeBoxW, closePadBlock: l.closePadBlock, closePadInline: l.closePadInline,
+    });
+    function writeMemo(key, value) {
       const memo = readMemo();
-      const pick = (l) => ({
-        closeShown: l.closeShown, closeOpacity: l.closeOpacity, closeFillOpacity: l.closeFillOpacity,
-        closeBoxW: l.closeBoxW, closePadBlock: l.closePadBlock, closePadInline: l.closePadInline,
-      });
+      if (JSON.stringify(memo[key]) === JSON.stringify(value)) return;
+      delete memo[key];
+      memo[key] = value;
+      const keys = Object.keys(memo);
+      for (const old of keys.slice(0, Math.max(0, keys.length - 12))) delete memo[old];
+      try { Services.prefs.setStringPref(CLOSE_MEMO_PREF, JSON.stringify(memo)); } catch {}
+    }
+    function rememberClose(probed, normal, hover, close) {
+      const key = memoKey(closeMode());
+      const memo = readMemo();
       if (probed) {
         if (!memo[key]) return close;
         Object.assign(normal, memo[key].normal);
         Object.assign(hover, memo[key].hover);
         return memo[key].close ?? close; // a normal tab's beats the selected stack tab's
       }
-      const value = { normal: pick(normal), hover: pick(hover), close: close.closeW ? close : memo[key]?.close };
-      if (JSON.stringify(memo[key]) === JSON.stringify(value)) return close;
-      delete memo[key];
-      memo[key] = value;
-      const keys = Object.keys(memo);
-      for (const old of keys.slice(0, Math.max(0, keys.length - 12))) delete memo[old];
-      try { Services.prefs.setStringPref(CLOSE_MEMO_PREF, JSON.stringify(memo)); } catch {}
+      writeMemo(key, { ...memo[key], normal: pickClose(normal), hover: pickClose(hover), close: close.closeW ? close : memo[key]?.close });
       return close;
+    }
+    function rememberSelectedClose(sel) {
+      const key = memoKey(closeMode());
+      const entry = readMemo()[key];
+      if (entry) writeMemo(key, { ...entry, selected: pickClose(sel) });
+    }
+    // A finished look isn't read again, so the selected tab of a mode first
+    // seen with a stack tab selected would never be remembered: read just its
+    // close button, once, when a normal tab is selected.
+    function rememberSelectedOnce() {
+      const tab = gBrowser.selectedTab;
+      if (!themeKey || !tab || tab.pinned || U.stackOf(tab) || readMemo()[memoKey(closeMode())]?.selected) return;
+      if (settling(tab) || !looksSelected(tab)) return;
+      const sp = partsOf(tab);
+      if (complete(sp)) rememberSelectedClose(readTab(sp, sp.tab, false, () => lookOf(sp)));
     }
 
     // Without a measured close button: its computed size and margins, at the
@@ -6286,18 +6334,19 @@
       return c.left <= bgRect.left + 0.5 && c.right >= bgRect.right - 0.5 && c.top <= bgRect.top + 0.5 && c.bottom >= bgRect.bottom - 0.5;
     }
 
+    // Firefox moves `visuallyselected` (which themes style) only once the
+    // new tab has painted, a moment after the switch; until then the old
+    // tab still looks selected and the new one doesn't.
+    const looksSelected = (t) => t.hasAttribute("visuallyselected");
+    // A tab that's opening (or making room for one) is still changing
+    // size: a new tab starts as a sliver until Firefox gives it "fadein",
+    // then grows, and a sliver measures as nonsense.
+    const settling = (t) => !t.hasAttribute("fadein") ||
+      t.getAnimations().some(a => a instanceof CSSTransition && a.playState === "running");
+
     function readAll() {
       const visible = (t) => !t.hidden && !t.closing && !t.pinned && !U.stackOf(t) && t.getBoundingClientRect().width > 0;
       const hasIcon = (t) => (t.querySelector(".tab-icon-image")?.getBoundingClientRect().width ?? 0) > 0;
-      // Firefox moves `visuallyselected` (which themes style) only once the
-      // new tab has painted, a moment after the switch; until then the old
-      // tab still looks selected and the new one doesn't.
-      const looksSelected = (t) => t.hasAttribute("visuallyselected");
-      // A tab that's opening (or making room for one) is still changing
-      // size: a new tab starts as a sliver until Firefox gives it "fadein",
-      // then grows, and a sliver measures as nonsense.
-      const settling = (t) => !t.hasAttribute("fadein") ||
-        t.getAnimations().some(a => a instanceof CSSTransition && a.playState === "running");
       const all = gBrowser.tabs.filter(t => !t.selected && !t.multiselected && !looksSelected(t) && visible(t));
       const steady = all.filter(t => !settling(t));
       // A tab in a split view is laid out as half of it, not like a tab of
@@ -6389,7 +6438,7 @@
           close = rememberClose(probed, normal, hover, close);
           if (close.closeW) closeCache = { ...close, themeKey };
           else close = (closeCache?.themeKey === themeKey ? closeCache : null) ?? closeFallback(p, layout);
-          const closeHoverBg = readTab(p, p.close, true, () => getComputedStyle(p.close).backgroundColor);
+          const { closeHoverBg, closeHoverColor } = closeHoverOf(p);
           // The separator, read on a normal tab with a normal tab on its
           // separator's side (themes hide it next to the selected tab and at
           // the ends), and whether it hides while either tab is hovered. With
@@ -6426,7 +6475,7 @@
           const chip = [...document.querySelectorAll(`${STACK} > .tab-group-label-container`)]
             .find(c => c.getBoundingClientRect().height > 0);
           const containerShift = chip ? chip.getBoundingClientRect().top - tabTop : (geometry?.containerShift ?? 0);
-          geometry = { ...layout, ...icon, ...close, closeHoverBg, transition, containerShift, tab, sep };
+          geometry = { ...layout, ...icon, ...close, closeHoverBg, closeHoverColor, transition, containerShift, tab, sep };
           looks = { ...(looks || {}), normal, hover };
           Object.assign(got, { normal: true, quality: probed ? 1 : 2, shift: !!chip });
         }
@@ -6444,7 +6493,7 @@
           // with the shape of a selected tab seen before (or a normal one).
           const splitInStack = !!(selectedTab.splitview && U.stackOf(selectedTab));
           if (!(splitInStack && looks.selected?.themeKey === themeKey)) {
-            const sel = readTab(sp, sp.tab, false, () => lookOf(sp));
+            const sel = { ...readTab(sp, sp.tab, false, () => lookOf(sp)), ...closeHoverOf(sp) };
             if (splitInStack) {
               const shape = selectedLayout?.themeKey === themeKey ? selectedLayout : looks.normal;
               Object.assign(sel, { box: shape.box, contentMid: shape.contentMid });
@@ -6455,6 +6504,7 @@
             }
             looks.selected = { ...sel, themeKey };
             got.selected = true;
+            if (!U.stackOf(selectedTab)) rememberSelectedClose(sel);
           }
         } else {
           later(150); // not painted as selected yet
@@ -6493,6 +6543,8 @@
         if (entry.done && !(entry.quality < 2 && normalTabShown()) && !(!entry.shift && chipShown())) {
           geometry = entry.geometry;
           looks = entry.looks;
+          themeKey = entry.themeKey;
+          rememberSelectedOnce();
           return 0;
         }
         // Read on top of this settings' own look if it has one, else the last
@@ -6513,6 +6565,7 @@
         entry.selected ||= got.selected;
         entry.geometry = geometry;
         entry.looks = looks;
+        entry.themeKey = themeKey;
         entry.done = !retry && now >= entry.until && entry.normal && entry.selected && !!looks?.normal?.box;
         if (!entry.done && !retry && now < entry.until) later(entry.until - now + 50);
         return retry;
@@ -6522,9 +6575,11 @@
       get looks() { return looks; },
 
       // What normal tabs showed of their close button with room to spare
-      // (no closebuttons="activetab"), in this theme, if ever seen.
-      roomyClose() {
-        return readMemo()[`${themeKey}|`] ?? null;
+      // (crowded false) or in a crowded tab bar (closebuttons="activetab"),
+      // in this design and theme, if ever seen: { normal, hover, selected?,
+      // close } or null.
+      memoClose(crowded) {
+        return readMemo()[memoKey(crowded ? "activetab" : "")] ?? null;
       },
 
       // A state's background box within the tab: measured, or the normal
@@ -6894,26 +6949,63 @@
       });
       addLayers();
 
+      // Whether the stack bar is crowded, by Firefox's rule for the tab bar
+      // (tabs.mjs _updateCloseButtons): it scrolls, or its first tab is no
+      // wider than browser.tabs.tabClipWidth. Then its tabs' close buttons
+      // look as normal tabs' do when tabs have shrunk (most designs hide an
+      // unselected tab's until it's hovered, or altogether); otherwise as with
+      // room to spare. That's the stack bar's own state, not the tab bar's.
+      let barCrowded = false;
+      const clipWidth = () => gBrowser.tabContainer._tabClipWidth ?? Services.prefs.getIntPref("browser.tabs.tabClipWidth", 140);
+      const checkCrowded = ctx.throttle(() => {
+        const scroller = document.getElementById("floorp-stack-scroller");
+        const first = scroller?.querySelector(".floorp-stack-tab:not([data-split-position])");
+        const crowded = !!scroller && (scroller.scrollWidth > scroller.clientWidth + 1 ||
+          (!!first && first.getBoundingClientRect().width <= clipWidth()));
+        if (crowded === barCrowded) return;
+        barCrowded = crowded;
+        refresh();
+      }, "checking whether the stack bar is crowded");
+      const sizes = ctx.resizeObserver(() => checkCrowded());
+      let observed = [];
+      ctx.watchToolbox(() => {
+        const now = [document.getElementById("floorp-stack-scroller"), document.querySelector("#floorp-stack-items > .floorp-stack-tab")].filter(Boolean);
+        if (now.length === observed.length && now.every((el, i) => el === observed[i])) return;
+        for (const el of observed) sizes.unobserve(el);
+        for (const el of now) sizes.observe(el);
+        observed = now;
+        checkCrowded();
+      });
+
       function css() {
-        // In a crowded tab bar (and with only stacks, whose squashed tabs
-        // count as narrow), Firefox shows only the selected tab's close
-        // button; the stack bar isn't the crowded one, so its tabs show theirs
-        // as normal tabs do with room to spare, and measure them the same,
-        // if that was seen in this theme.
-        const roomy = gBrowser.tabContainer.getAttribute("closebuttons") === "activetab" ? TabLook.roomyClose() : null;
-        const g = roomy?.close ? { ...TabLook.geometry, ...roomy.close } : TabLook.geometry;
+        // The close buttons' look for the stack bar's state: the one just
+        // read when the tab bar is in the same state, else the one normal
+        // tabs showed in that state in this design and theme, if ever seen.
+        // Never seen crowded: Firefox's rule, only the selected tab's.
+        const rowCrowded = gBrowser.tabContainer.getAttribute("closebuttons") === "activetab";
+        const other = barCrowded !== rowCrowded ? TabLook.memoClose(barCrowded) : null;
+        const hideUnselected = barCrowded && !rowCrowded && !other;
+        const g = other?.close ? { ...TabLook.geometry, ...other.close } : TabLook.geometry;
         const t = g.tab;
         const { normal, hover } = TabLook.looks;
         const selected = TabLook.looks.selected || normal;
         const nb = normal.box;
         const rowH = t.height + t.mt + t.mb;
-        // Themes may also make the button smaller in a crowded tab bar (Lepton).
-        const closeOf = (l, state) => (roomy?.[state] ? { ...l, ...roomy[state] } : l);
+        // Themes may also make the button smaller in a crowded tab bar (Lepton, Protonfix).
+        const closeOf = (l, state) => (other?.[state] ? { ...l, ...other[state] }
+          : hideUnselected ? { ...l, closeShown: false } : l);
         const nClose = closeOf(normal, "normal");
         const hClose = closeOf(hover, "hover");
-        const sClose = roomy?.normal?.closeBoxW
-          ? { ...selected, closeBoxW: roomy.normal.closeBoxW, closePadBlock: roomy.normal.closePadBlock, closePadInline: roomy.normal.closePadInline }
-          : selected;
+        // The selected tab's button in that state; if it wasn't seen, an
+        // unselected one's size (a hidden one's means nothing: the hovered one's).
+        const sizeFrom = other?.normal?.closeShown ? other.normal : other?.hover;
+        const sClose = other?.selected ? { ...selected, ...other.selected }
+          : sizeFrom?.closeBoxW
+            ? { ...selected, closeBoxW: sizeFrom.closeBoxW, closePadBlock: sizeFrom.closePadBlock, closePadInline: sizeFrom.closePadInline }
+            : selected;
+        // Hovered, the selected tab's close button is full size too (Firefox
+        // narrows only an unhovered tab's).
+        const shClose = { ...sClose, closeBoxW: hClose.closeBoxW, closePadBlock: hClose.closePadBlock, closePadInline: hClose.closePadInline };
         // How far a state's content row sits from the tab's middle.
         const mid = (l) => (l.contentMid ?? normal.contentMid ?? t.height / 2) - t.height / 2;
 
@@ -6967,6 +7059,7 @@
           margin-inline-end: ${room(l)}px !important;`;
         const closeRules = (l) => `
           display: ${l.closeShown ? "flex" : "none"} !important; opacity: ${l.closeOpacity} !important; fill-opacity: ${l.closeFillOpacity} !important;
+          ${l.closeColor ? `color: ${l.closeColor} !important;` : ""}
           width: ${closeW(l)}px !important;
           ${l.closePadBlock ? `padding-block: ${l.closePadBlock} !important; padding-inline: ${l.closePadInline} !important;` : ""}
           inset-block-start: calc(50% + ${mid(l)}px) !important;`;
@@ -7056,7 +7149,6 @@
             outline: none !important;
             ${contentRules(normal)}
           }
-          ${P}[uc-audio] { min-width: calc(${t.minW}px + var(--tab-min-width-extra-icons, 0px)) !important; }
           ${H} { ${contentRules(hover)} }
           ${S} { ${contentRules(selected)} }
           ${M}:not([data-selected="true"]) { color: ${selected.color} !important; }
@@ -7097,6 +7189,8 @@
             margin: 0 !important; margin-inline-end: ${g.iconGap}px !important;
             opacity: ${normal.iconOpacity} !important;
           }
+          /* A tab playing sound has its icon closer to the speaker (Audio button). */
+          ${P}[uc-audio] ${ICONBOX} { margin-inline-end: var(--tab-icon-margin-inline-end, 2px) !important; }
           ${H} ${ICONBOX} { opacity: ${hover.iconOpacity} !important; }
           ${S} ${ICONBOX} { opacity: ${selected.iconOpacity} !important; }
           ${P} ${ICONBOX} > :is(.floorp-stack-tab-icon, .uc-stack-throbber) { width: ${g.iconW}px !important; height: ${g.iconH}px !important; }
@@ -7120,6 +7214,7 @@
           ${H} ${LABEL} { ${textRules(hClose)} mask-image: linear-gradient(to left, transparent, black 2em) !important; }
           ${H}:-moz-locale-dir(rtl) ${LABEL} { mask-image: linear-gradient(to right, transparent, black 2em) !important; }
           ${S} ${LABEL} { ${textRules(sClose)} }
+          ${S}:hover ${LABEL} { margin-inline-end: ${room(shClose)}px !important; }
           :root[floorp-hover-reload] ${H} ${LABEL} { margin-inline-end: ${room(hClose) + (g.closeW || 16) + 2}px !important; }
 
           ${P} ${CLOSE} {
@@ -7137,8 +7232,14 @@
           }
           ${P} ${CLOSE} > .toolbarbutton-icon { width: ${glyph}px !important; height: ${glyph}px !important; margin: 0 !important; padding: 0 !important; }
           ${P} ${CLOSE}:hover { background-color: ${g.closeHoverBg} !important; }
+          ${S} ${CLOSE}:hover { background-color: ${selected.closeHoverBg ?? g.closeHoverBg} !important; }
+          /* A tab's close button keeps the tab's text color on hover (Floorp's
+             changes it), unless the theme changes it too. */
+          ${hover.closeColor && g.closeHoverColor && g.closeHoverColor !== hover.closeColor ? `${P} ${CLOSE}:hover:hover { color: ${g.closeHoverColor} !important; }` : ""}
+          ${selected.closeColor && selected.closeHoverColor && selected.closeHoverColor !== selected.closeColor ? `${S} ${CLOSE}:hover:hover { color: ${selected.closeHoverColor} !important; }` : ""}
           ${H} ${CLOSE} { ${closeRules(hClose)} }
           ${S} ${CLOSE} { ${closeRules(sClose)} }
+          ${S}:hover ${CLOSE} { ${closeRules(shClose)} }
           ${P} > .floorp-stack-tab-refresh {
             inset-inline-end: ${nb.end + (g.closeEnd ?? g.padEnd) + (g.closeW || 16) + 2}px !important;
             inset-block-start: calc(50% + ${mid(normal)}px) !important;
