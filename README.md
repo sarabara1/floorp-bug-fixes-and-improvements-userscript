@@ -18,6 +18,7 @@ Fixes for bugs in Floorp's tab stacks, tab bar, workspaces and sidebar.
 - **Tab menu text on startup**: Fixes the tab menu showing only icons, with no text, when the browser starts on a stack tab.
 - **Stacks in new windows**: Fixes new windows sometimes opening with their stacks turned into plain tab groups.
 - **Resizable sidebar**: Lets the sidebar be made much wider on themes that limit its width.
+- **Container line on the selected tab**: In the Lepton, Photon and Protonfix designs, the selected tab shows its container's colored line again, across the tab.
 - **Stacks copied into another workspace**: Fixes stacks showing up in two workspaces at once after one of their tabs was moved to another workspace or reopened. A moved tab now leaves its stack, a reopened tab stays out of other workspaces' stacks, and stacks already split this way become one stack in each workspace.
 - **Reopened tabs go back to their workspace**: Reopening a closed tab brings it back to the workspace it was closed in, and into its stack, and switches to that workspace.
 - **Moved stacks keep their tab**: A stack moved to another window opens on the tab you were using in it, instead of its first or last tab.
