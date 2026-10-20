@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.4.7
+// @version        1.4.8
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -6025,7 +6025,24 @@
       };
     }
 
-    function readTab(p, lockOn, hover, fn) {
+    // While a tab is read, its pseudo-elements' transitions are off too
+    // (inline styles can't reach them): a sheet keyed on this attribute.
+    const READING_ATTR = "uc-tablike-reading";
+    function readingSheet() {
+      if (document.getElementById(READING_ATTR)) return;
+      const sheet = document.createElementNS(XHTML_NS, "style");
+      sheet.id = READING_ATTR;
+      const T = `:root #tabbrowser-tabs .tabbrowser-tab[${READING_ATTR}]`;
+      sheet.textContent = `${T}::before, ${T}::after, ${T} *::before, ${T} *::after { transition: none !important; }`;
+      document.head.appendChild(sheet);
+    }
+    // Marker colors a tab's container colors are set to while its container
+    // line is looked for (see containerOf).
+    const CONTAINER_VARS = [["--identity-tab-color", "rgb(1, 2, 3)"], ["--identity-icon-color", "rgb(1, 2, 4)"]];
+
+    // container: read the tab as a container tab (see containerOf).
+    function readTab(p, lockOn, hover, fn, container = false) {
+      readingSheet();
       const probe = probing.has(p.tab) && canProbe();
       // A probed tab's own size transitions too (Firefox's tab width).
       const els = probe ? [p.tab, p.bg, p.content, p.icon, p.label, p.close] : [p.bg, p.content, p.icon, p.label, p.close];
@@ -6039,11 +6056,27 @@
       const stripped = [U.TAB_MARK_ATTR, ...(p.tab === standIn ? ["selected", "visuallyselected"] : [])]
         .filter(a => p.tab.hasAttribute(a)).map(a => [a, p.tab.getAttribute(a)]);
       for (const [a] of stripped) p.tab.removeAttribute(a);
+      p.tab.setAttribute(READING_ATTR, "");
+      const contextId = p.tab.getAttribute("usercontextid");
+      const varsBefore = CONTAINER_VARS.map(([n]) => [n, p.tab.style.getPropertyValue(n), p.tab.style.getPropertyPriority(n)]);
+      if (container) {
+        p.tab.setAttribute("usercontextid", contextId || "1");
+        for (const [n, v] of CONTAINER_VARS) p.tab.style.setProperty(n, v, "important");
+      }
       IU.addPseudoClassLock(lockOn, ":hover", hover);
       try {
         return fn();
       } finally {
         IU.removePseudoClassLock(lockOn, ":hover");
+        if (container) {
+          if (contextId === null) p.tab.removeAttribute("usercontextid");
+          else p.tab.setAttribute("usercontextid", contextId);
+          for (const [n, v, prio] of varsBefore) {
+            if (v) p.tab.style.setProperty(n, v, prio);
+            else p.tab.style.removeProperty(n);
+          }
+        }
+        p.tab.removeAttribute(READING_ATTR);
         for (const [a, v] of stripped) p.tab.setAttribute(a, v);
         if (probe) p.tab.removeAttribute(PROBE_ATTR);
         unsize?.();
@@ -6068,6 +6101,57 @@
           IU.removePseudoClassLock(p.close, ":hover");
         }
       });
+    }
+
+    // How the tab shows its container (the tab is read as a container tab
+    // with marker colors): the first box or pseudo-element painting one,
+    // which is Firefox's .tab-context-line along the top, Lepton's line under
+    // the title (.tab-content::before), or whatever the theme draws. Its box
+    // within the tab, borders, corners, opacity and which color it uses; null
+    // when nothing shows one.
+    function containerOf(p) {
+      const t = p.tab.getBoundingClientRect();
+      if (!t.width) return null;
+      const rtl = getComputedStyle(p.tab).direction === "rtl";
+      const marker = (v) => CONTAINER_VARS.find(([, c]) => String(v).includes(c))?.[0];
+      for (const el of [p.tab, ...p.tab.querySelectorAll("*")]) {
+        for (const which of [null, "::before", "::after"]) {
+          const s = getComputedStyle(el, which);
+          if ((which && s.content === "none") || s.display === "none" || s.visibility !== "visible") continue;
+          const sides = ["Top", "Right", "Bottom", "Left"].filter(side =>
+            s[`border${side}Style`] !== "none" && px(s[`border${side}Width`]) > 0 && marker(s[`border${side}Color`]));
+          const colorVar = marker(s.backgroundColor) || (sides.length && marker(s[`border${sides[0]}Color`]));
+          if (!colorVar) continue;
+          // A pseudo-element's box, from its generated-content node.
+          const node = which
+            ? [...(IU.getChildrenForNode?.(el, true, false) ?? [])].find(n => n.nodeName === `_moz_generated_content_${which.slice(2)}`)
+            : el;
+          const r = node?.getBoundingClientRect?.();
+          if (!r) continue;
+          return {
+            start: rtl ? t.right - r.right : r.left - t.left,
+            end: rtl ? r.left - t.left : t.right - r.right,
+            top: r.top - t.top, width: r.width, height: r.height, tabW: t.width,
+            fill: !!marker(s.backgroundColor),
+            borders: ["Top", "Right", "Bottom", "Left"].map(side => (sides.includes(side) ? px(s[`border${side}Width`]) : 0)),
+            radius: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius].join(" "),
+            opacity: s.opacity,
+            colorVar,
+            el, which, // for the transition, read outside the reading (which turns it off)
+          };
+        }
+      }
+      return null;
+    }
+    // containerOf for a state, with the theme's transition on the line.
+    function containerLook(p, hover) {
+      const c = readTab(p, p.tab, hover, () => containerOf(p), true);
+      if (!c) return null;
+      const s = getComputedStyle(c.el, c.which);
+      const durations = s.transitionDuration.split(",").map(v => parseFloat(v) || 0);
+      const i = durations.indexOf(Math.max(...durations));
+      const { el, which, ...rest } = c;
+      return { ...rest, transition: durations[i] > 0 ? `${durations[i]}s ${s.transitionTimingFunction.split(/,(?![^(]*\))/)[i]?.trim() || "ease"}` : "" };
     }
 
     // The state-dependent look of a tab.
@@ -6460,6 +6544,8 @@
             }
           }
           close = rememberClose(probed, normal, hover, close);
+          normal.container = containerLook(p, false);
+          hover.container = containerLook(p, true);
           if (close.closeW) closeCache = { ...close, themeKey };
           else close = (closeCache?.themeKey === themeKey ? closeCache : null) ?? closeFallback(p, layout);
           const { closeHoverBg, closeHoverColor } = closeHoverOf(p);
@@ -6517,7 +6603,7 @@
           // with the shape of a selected tab seen before (or a normal one).
           const splitInStack = !!(selectedTab.splitview && U.stackOf(selectedTab));
           if (!(splitInStack && looks.selected?.themeKey === themeKey)) {
-            const sel = { ...readTab(sp, sp.tab, false, () => lookOf(sp)), ...closeHoverOf(sp) };
+            const sel = { ...readTab(sp, sp.tab, false, () => lookOf(sp)), ...closeHoverOf(sp), container: containerLook(sp, false) };
             if (splitInStack) {
               const shape = selectedLayout?.themeKey === themeKey ? selectedLayout : looks.normal;
               Object.assign(sel, { box: shape.box, contentMid: shape.contentMid });
@@ -6543,6 +6629,7 @@
         if (users++ === 0) reset();
         ctx.onCleanup(() => {
           if (--users > 0) return;
+          document.getElementById(READING_ATTR)?.remove();
           unsquash();
           reset();
         });
@@ -6936,7 +7023,7 @@
     id: "stack-tabs-look-like-tabs",
     category: "appearance",
     name: "Stack tabs look like normal tabs (Experimental)",
-    description: "Tabs in the stack bar look exactly like normal tabs in whatever theme and design you use: the same size, shape, spacing, text, icon, close button and separators, and the same hover and selected colors. They shrink down to your minimum tab width before the stack bar scrolls. The stack bar is as tall as the tab bar.",
+    description: "Tabs in the stack bar look exactly like normal tabs in whatever theme and design you use: the same size, shape, spacing, text, icon, close button, separators and container line (with its animation), and the same hover and selected colors. They shrink down to your minimum tab width before the stack bar scrolls. The stack bar is as tall as the tab bar.",
     default: false,
     init(ctx) {
       // A stack tab copies a real tab (see TabLook), at a tab's size: the
@@ -7138,6 +7225,40 @@
           }
           ${P}[data-split-active="true"] ${BG} { border-color: var(--focus-outline-color, AccentColor) !important; }`;
 
+        // A container's line (Containers draws it as the stack tab's ::before)
+        // where and as the tab shows it in each state: Firefox's along the top,
+        // Lepton's under the title (a quarter of the tab, the whole tab when
+        // selected), with the theme's transition between them. A line that
+        // reaches near the tab's end keeps its distance from it; a shorter one
+        // keeps its share of the tab, so both shrink with the stack tab.
+        const lineRules = (c) => {
+          if (!c) return "display: none !important;";
+          const width = c.end < c.tabW / 4 ? `calc(100% - ${c.start + c.end}px)` : `${(c.width / c.tabW) * 100}%`;
+          const [bt, br, bb, bl] = c.borders;
+          return `
+            display: block !important; content: "" !important; position: absolute !important;
+            inset-inline-start: ${c.start}px !important; inset-inline-end: auto !important;
+            inset-block-start: ${c.top}px !important; inset-block-end: auto !important;
+            width: ${width} !important; height: ${c.height}px !important;
+            box-sizing: border-box !important; margin: 0 !important; padding: 0 !important; transform: none !important;
+            background: ${c.fill ? `var(${c.colorVar})` : "none"} !important;
+            border-style: solid !important; border-color: var(${c.colorVar}) !important;
+            border-width: ${bt}px ${br}px ${bb}px ${bl}px !important;
+            border-radius: ${c.radius} !important;
+            opacity: ${c.opacity} !important;`;
+        };
+        const line = normal.container;
+        const lineMove = [normal, hover, selected].map(l => l.container?.transition).find(Boolean);
+        const containerCss = `
+          ${P}[usercontextid]::before {
+            ${lineRules(line)}
+            z-index: 1 !important;
+            pointer-events: none !important;
+            transition: ${lineMove ? ["width", "inset-inline-start", "inset-block-start", "height", "opacity"].map(p => `${p} ${lineMove}`).join(", ") : "none"} !important;
+          }
+          ${H}[usercontextid]::before { ${lineRules(hover.container === undefined ? line : hover.container)} }
+          ${S}[usercontextid]::before { ${lineRules(selected.container === undefined ? line : selected.container)} }`;
+
         const glyph = g.closeIcon || 12;
         return `
           :root[${ROOT_ATTR}] #floorp-stack-bar {
@@ -7270,13 +7391,7 @@
           }
           ${H} > .floorp-stack-tab-refresh { inset-block-start: calc(50% + ${mid(hover)}px) !important; }
 
-          /* A container's line, where Firefox draws it on a tab: along the top
-             of its background. */
-          ${P}[usercontextid]::before {
-            inset-block: ${nb.top + normal.borderWidth.top}px auto !important;
-            inset-inline: calc(${nb.start}px + var(--tab-border-radius, 0px) / 2) calc(${nb.end}px + var(--tab-border-radius, 0px) / 2) !important;
-            z-index: 1 !important;
-          }
+          ${containerCss}
           ${sepCss}
         `;
       }
