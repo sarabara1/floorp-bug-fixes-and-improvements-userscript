@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.4.9
+// @version        1.5.1
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -1342,6 +1342,26 @@
       }
     },
 
+    // Floorp closing a workspace's tabs one by one because the workspace is
+    // being deleted or archived: not tabs the user is closing.
+    closingWorkspace() {
+      return U.callStackIncludes(/removeTabByWorkspaceId/);
+    },
+
+    // Floorp makes every group a stack unless floorp.tabstacks.groupKinds
+    // lists it as a plain group ({[groupId]: "group"}).
+    setGroupKind(id, plain) {
+      const PREF = "floorp.tabstacks.groupKinds";
+      let kinds = {};
+      try {
+        kinds = JSON.parse(Services.prefs.getStringPref(PREF, "{}")) || {};
+      } catch (e) {}
+      if (plain === (kinds[id] === "group")) return;
+      if (plain) kinds[id] = "group";
+      else delete kinds[id];
+      Services.prefs.setStringPref(PREF, JSON.stringify(kinds));
+    },
+
     // The URLs Firefox's new tab command opens.
     isBlankNewTab(uri) {
       return uri == null || uri === "" ||
@@ -1432,8 +1452,8 @@
   defineFeature({
     id: "drag-and-drop",
     category: "fixes",
-    name: "Stack-aware drag and drop",
-    description: "Tabs and stacks move around the tab bar smoothly without accidentally merging into stacks. Tabs can move between stacks, tabs from other windows can join a stack, and links, text and files can be dropped onto a stack or its tabs.",
+    name: "Dragging tabs and stacks",
+    description: "Tabs and stacks move smoothly when you drag them along the tab bar, without dropping into a stack by accident. You can also drag tabs from one stack to another, drag tabs from other windows into a stack, and drop links, text and files onto a stack or its tabs.",
     default: true,
     standalone: ["floorp-tab-and-file-drag-fix.uc.js"],
     init(ctx) {
@@ -2180,8 +2200,8 @@
   defineFeature({
     id: "workspace-drop",
     parent: "drag-and-drop",
-    name: "Drop into other workspaces",
-    description: "Hold a dragged tab, stack, group, link, text, image or file over the workspaces button to open its menu, then drop it on a workspace: tabs, stacks and groups move to the end of it and links open there, while you stay in the workspace you're in.",
+    name: "Drop on other workspaces",
+    description: "Hold anything you're dragging over the Workspaces button to open its menu, then drop it on a workspace. Tabs, stacks and groups move to the end of that workspace, and links, text and files open there. You stay in the workspace you're in.",
     default: true,
     init(ctx) {
       // Floorp's workspaces button is a CustomizableUI "view" widget: its menu
@@ -2532,7 +2552,7 @@
     parent: "drag-and-drop",
     requires: ["workspace-drop"],
     name: "Switch workspaces while dragging",
-    description: "Hold a drag over a workspace in the workspaces menu to switch to it, taking dragged tabs, stacks and groups along, so you can drop them exactly where you want in its tab bar.",
+    description: "Hold a drag over a workspace in the Workspaces menu to switch to it. The tabs you're dragging come along, so you can drop them anywhere in its tab bar.",
     default: false,
     // Done by workspace-drop, while this runs.
     init() {},
@@ -2541,8 +2561,8 @@
   defineFeature({
     id: "tab-overflow",
     category: "fixes",
-    name: "Double new tab button",
-    description: "Fixes a random startup bug where the new tab button appears twice and dragging tabs stops working.",
+    name: "Two new tab buttons",
+    description: "Fixes a bug where the new tab button sometimes shows up twice after the browser starts, and dragging tabs stops working.",
     default: true,
     standalone: ["floorp-tab-overflow-fix.uc.js"],
     init(ctx) {
@@ -2580,8 +2600,8 @@
   defineFeature({
     id: "close-buttons-with-stacks",
     category: "fixes",
-    name: "Close buttons when a stack comes first",
-    description: "Fixes normal tabs losing their close buttons whenever the tab bar starts with a stack, as if the tab bar were full.",
+    name: "Missing close buttons",
+    description: "Fixes normal tabs losing their close buttons when the first thing in the tab bar is a stack.",
     default: true,
     init(ctx) {
       // Firefox decides whether the tab bar is crowded (closebuttons=
@@ -2624,7 +2644,7 @@
   defineFeature({
     id: "context-menu-labels",
     category: "fixes",
-    name: "Tab menu text on startup",
+    name: "Empty tab menu",
     description: "Fixes the tab menu showing only icons, with no text, when the browser starts on a stack tab.",
     default: true,
     standalone: ["stacktab-general-fixes.uc.js"],
@@ -2641,7 +2661,7 @@
     id: "stacks-in-new-windows",
     category: "fixes",
     name: "Stacks in new windows",
-    description: "Fixes new windows sometimes opening with their stacks turned into plain tab groups.",
+    description: "Fixes stacks sometimes turning into plain tab groups in new windows.",
     default: true,
     standalone: ["stacktab-general-fixes.uc.js"],
     init(ctx) {
@@ -2696,8 +2716,8 @@
   defineFeature({
     id: "sidebar-width",
     category: "fixes",
-    name: "Resizable sidebar",
-    description: "Lets the sidebar be made much wider on themes that limit its width.",
+    name: "Wider sidebar",
+    description: "Lets you make the sidebar much wider on themes that limit its width.",
     default: true,
     standalone: ["floorp-sidebar-resize-fix.uc.css"],
     init(ctx) {
@@ -2713,7 +2733,7 @@
     id: "selected-container-line",
     category: "fixes",
     name: "Container line on the selected tab",
-    description: "In the Lepton, Photon and Protonfix designs, the selected tab shows its container's colored line again, across the tab.",
+    description: "Fixes the selected tab missing its container's colored line in the Lepton, Photon and Protonfix designs.",
     default: true,
     init(ctx) {
       // Lepton's stylesheet (Photon and Protonfix use it too) draws a
@@ -2736,8 +2756,8 @@
   defineFeature({
     id: "workspace-split-stacks",
     category: "fixes",
-    name: "Stacks copied into another workspace",
-    description: "Fixes stacks showing up in two workspaces at once after one of their tabs was moved to another workspace or reopened. A moved tab now leaves its stack, a reopened tab stays out of other workspaces' stacks, and stacks already split this way become one stack in each workspace.",
+    name: "Stacks showing in two workspaces",
+    description: "Fixes a stack showing up in two workspaces at once after one of its tabs was moved to another workspace or reopened. A tab moved to another workspace now leaves its stack, and stacks that are already split become a separate stack in each workspace.",
     default: true,
     init(ctx) {
       // Floorp moves a tab to a workspace by changing its workspace attribute,
@@ -2746,7 +2766,6 @@
       // shows in both, and renaming or closing it in one changes the other.
       ctx.require(typeof gBrowser.moveTabToEnd === "function", "gBrowser.moveTabToEnd");
       ctx.require(typeof gBrowser.ungroupTab === "function", "gBrowser.ungroupTab");
-      const KINDS_PREF = "floorp.tabstacks.groupKinds"; // Floorp: { [groupId]: "group" }
       const knownIds = () => new Set(U.workspaces().map(w => w.id));
 
       // ---- a tab moved out of a group's workspace leaves the group ----
@@ -2888,16 +2907,6 @@
         return id;
       }
 
-      // Floorp makes every group a stack unless this pref says otherwise.
-      function markPlainGroup(id) {
-        let kinds = {};
-        try {
-          kinds = JSON.parse(Services.prefs.getStringPref(KINDS_PREF, "{}")) || {};
-        } catch (e) {}
-        kinds[id] = "group";
-        Services.prefs.setStringPref(KINDS_PREF, JSON.stringify(kinds));
-      }
-
       function separate(group, known) {
         const byWorkspace = new Map();
         for (const t of group.tabs) {
@@ -2920,7 +2929,7 @@
           }
           if (!items.length) continue;
           const id = newGroupId();
-          if (!U.isStack(group)) markPlainGroup(id);
+          if (!U.isStack(group)) U.setGroupKind(id, true);
           const copy = gBrowser.addTabGroup(items, {
             id,
             label: group.label,
@@ -2957,7 +2966,7 @@
     id: "reopen-in-workspace",
     category: "fixes",
     name: "Reopened tabs go back to their workspace",
-    description: "Reopening a closed tab brings it back to the workspace it was closed in, and into its stack, and switches to that workspace.",
+    description: "A closed tab you reopen goes back to the workspace and stack it was in, and takes you there.",
     default: true,
     init(ctx) {
       // Floorp saves a tab's workspace with its closed-tab data, but only puts
@@ -3011,10 +3020,103 @@
   });
 
   defineFeature({
+    id: "archive-keeps-stacks",
+    category: "fixes",
+    name: "Archived workspaces keep their stacks",
+    description: "Restoring an archived workspace brings back its stacks and tab groups just as they were, with its tabs in the same order.",
+    default: true,
+    init(ctx) {
+      // Floorp's Archive saves each tab's session state (getTabState, which
+      // has the tab's custom values but not its group) and restores the tabs
+      // one by one with addTab + setTabState, which never regroups them. So
+      // just before an archive every grouped tab gets its group as a custom
+      // value; the restored tabs carry it back and are regrouped.
+      const KEY = "uc-archived-group";
+      const SS = window.SessionStore;
+      ctx.require(typeof SS?.setCustomTabValue === "function", "SessionStore custom tab values");
+      const ARCHIVE = "floorp.workspaces.archive"; // the workspace menu item
+
+      function clear(tabs) {
+        for (const t of tabs) {
+          try {
+            if (t.isConnected && SS.getCustomTabValue(t, KEY)) SS.deleteCustomTabValue(t, KEY);
+          } catch (e) {}
+        }
+      }
+
+      // Before Floorp's own handler takes its snapshot. Every grouped tab is
+      // stamped (the menu doesn't say which workspace); tabs left behind lose
+      // the stamp again once the archive is done.
+      ctx.listen(window, "command", (e) => {
+        if (e.target?.getAttribute?.("data-floorp-context-menu-key") !== ARCHIVE) return;
+        for (const t of gBrowser.tabs) {
+          const g = t.group;
+          if (!g || t.pinned) {
+            clear([t]);
+            continue;
+          }
+          SS.setCustomTabValue(t, KEY, JSON.stringify({
+            id: g.id,
+            label: g.label,
+            color: g.color,
+            plain: !U.isStack(g),
+            collapsed: !!g.collapsed,
+          }));
+        }
+        ctx.timeout(() => clear(gBrowser.tabs), 10000);
+      }, { capture: true, priority: 1 }); // after shared-workspaces brings the tabs here
+
+      // ---- restoring ----
+      let restored = [];
+      const regroup = ctx.guard(() => {
+        const tabs = restored.filter(t => t.isConnected && !t.closing);
+        restored = [];
+        const groups = new Map(); // group id → {info, tabs}, in tab order
+        for (const t of gBrowser.tabs) {
+          if (!tabs.includes(t) || t.pinned || t.group) continue;
+          let info = null;
+          try {
+            info = JSON.parse(SS.getCustomTabValue(t, KEY) || "null");
+          } catch (e) {}
+          if (!info?.id) continue;
+          if (!groups.has(info.id)) groups.set(info.id, { info, tabs: [] });
+          groups.get(info.id).tabs.push(t);
+        }
+        for (const [oldId, { info, tabs: items }] of groups) {
+          // The old id when it's free, so anything keyed by it still applies.
+          const taken = (id) => [...Services.wm.getEnumerator("navigator:browser")]
+            .some(w => w.gBrowser?.tabGroups?.some(g => g.id === id));
+          let id = oldId;
+          while (taken(id)) id = `${Date.now()}-${Math.round(Math.random() * 100)}`; // Firefox's format
+          U.setGroupKind(id, !!info.plain);
+          const g = gBrowser.addTabGroup(items, { id, label: info.label ?? "", color: info.color, insertBefore: items[0] });
+          if (g && info.collapsed) g.collapsed = true;
+        }
+        clear(tabs);
+      }, "putting a restored workspace's stacks back");
+
+      ctx.hook(gBrowser, "addTab", function (next, uri, opts, ...rest) {
+        if (!U.callStackIncludes(/restoreTabsFromSnapshot/)) return next(uri, opts, ...rest);
+        // At the end, in order: without a position a tab can open next to
+        // the current one, inside its stack.
+        const o = opts && opts.tabIndex == null && opts.elementIndex == null
+          ? { ...opts, tabIndex: gBrowser.tabs.length }
+          : opts;
+        const tab = next(uri, o, ...rest);
+        if (tab) {
+          if (!restored.length) ctx.timeout(regroup); // after the whole (synchronous) loop
+          restored.push(tab);
+        }
+        return tab;
+      });
+    },
+  });
+
+  defineFeature({
     id: "moved-stack-keeps-tab",
     category: "fixes",
     name: "Moved stacks keep their tab",
-    description: "A stack moved to another window opens on the tab you were using in it, instead of its first or last tab.",
+    description: "A stack moved to another window opens on the tab you were using in it.",
     default: true,
     init(ctx) {
       // Every move to another window goes through gBrowser.adoptTab in the
@@ -3108,8 +3210,8 @@
   defineFeature({
     id: "stack-container-line",
     category: "stacks",
-    name: "Containers",
-    description: "Stack tabs in a container show the container's colored line, like normal tabs. A stack or group tab opened in a new container tab or reopened in a private container stays in its stack or group, next to where it was. A link opened in a private container from a stack or group tab opens in that stack or group.",
+    name: "Container tabs in stacks",
+    description: "Stack tabs show their container's colored line, like normal tabs. Reopening a stack or group tab in another container, or opening a link from it in a private container, keeps the new tab in the same stack or group, next to the old one.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -3221,8 +3323,8 @@
   defineFeature({
     id: "stack-audio-button",
     category: "stacks",
-    name: "Audio button",
-    description: "Stack tabs and stacks show the speaker button while playing sound. Click it to mute or unmute.",
+    name: "Speaker button",
+    description: "Stack tabs and stacks show a speaker button while they play sound. Click it to mute or unmute.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -3538,8 +3640,8 @@
   defineFeature({
     id: "stack-button-layout",
     category: "stacks",
-    name: "Normal tab buttons",
-    description: "Stack tabs and stacks have their close button at the right end, keep their icon visible on hover, and use the normal pointer, like normal tabs.",
+    name: "Close button on the right",
+    description: "Stack tabs and stacks have their close button on the right and keep their icon when hovered, like normal tabs, and show the normal mouse pointer.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -3646,7 +3748,7 @@
     id: "close-stays-in-stack",
     category: "stacks",
     name: "Stay in the stack when closing tabs",
-    description: "Closing or unloading a tab, or moving it to another workspace, switches to the nearest loaded tab in the same stack or group, or among the normal tabs. If none is left there, it goes to the nearest one outside, and a stack opens on the tab you last used in it.",
+    description: "Closing or unloading a tab, or moving it to another workspace, takes you to the nearest loaded tab in the same stack or group, or among your normal tabs. If there isn't one, you go to the nearest tab outside it, and into a stack on the tab you last used there.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init(ctx) {
@@ -3766,7 +3868,7 @@
     id: "close-prefer-left",
     parent: "close-stays-in-stack",
     name: "Go to the tab on the left",
-    description: "Looks for the next tab on the left first. Turn off to look on the right first.",
+    description: "Checks the tab on the left first. Turn off to check the right first.",
     default: true,
     standalone: ["stacktab-general-improvements.uc.js"],
     init() {
@@ -3843,7 +3945,7 @@
     id: "new-tab-shortcut-in-stack",
     category: "stacks",
     name: "Ctrl+T opens in the stack",
-    description: "Ctrl+T and the new tab mouse gesture open the tab where you are: in the stack you're using, or with your normal tabs when you're not in one.",
+    description: "Ctrl+T and the new tab mouse gesture open the new tab where you are: in the stack you're using, or with your normal tabs.",
     default: true,
     standalone: ["stacktab-hotkey-opens-in-stack.uc.js"],
     init(ctx) {
@@ -3919,7 +4021,7 @@
     id: "new-tab-shortcut-in-group",
     parent: "new-tab-shortcut-in-stack",
     name: "Also in tab groups",
-    description: "The same for tab groups: in a tab group, Ctrl+T and the mouse gesture open the tab in that group.",
+    description: "In a tab group, Ctrl+T and the mouse gesture open the new tab in that group.",
     default: true,
     init(ctx) {
       // Firefox still opens the tab itself (its new tab page, address bar
@@ -3950,14 +4052,14 @@
     id: "bookmarks-in-stack",
     category: "stacks",
     name: "Bookmarks open in the stack",
-    description: "Bookmarks and history entries opened in new tabs, including whole folders, go into the stack you're using.",
+    description: "Bookmarks and history opened in new tabs, including whole folders, go into the stack you're using.",
     default: true,
     init(ctx) {
       // Firefox opens these at the end of the tab bar, outside every stack.
       // addTab's tabGroup option creates them inside the stack instead (at
       // its end, or right after the current tab when new tabs open next to
       // it), so nothing is moved in afterwards. Outside a stack nothing
-      // changes. Outermost, so "One Floorp Hub and Settings tab" still takes
+      // changes. Outermost, so "Only one Floorp Hub and Settings tab" still takes
       // those pages back out to the normal tabs.
       const place = U.bookmarkPlacer(ctx);
       ctx.hook(gBrowser, "addTab", function (next, uri, opts, ...rest) {
@@ -3988,8 +4090,8 @@
   defineFeature({
     id: "inline-stack-newtab-button",
     category: "stacks",
-    name: "Stack + button beside the tabs",
-    description: "A stack's + button sits right after its tabs, like on the main tab bar, and moves to the edge when the tabs don't fit.",
+    name: "Stack + button next to the tabs",
+    description: "A stack's + button sits right after its last tab, like on the main tab bar, and moves to the edge when the tabs don't fit.",
     default: true,
     standalone: ["stacktab-inline-newtab-button.uc.js"],
     init(ctx) {
@@ -4076,7 +4178,7 @@
     id: "stack-newtab-containers",
     category: "stacks",
     name: "Container menu on the stack + button",
-    description: "Right-click or hold a stack's + button to open a new tab in a container in that stack, like the main tab bar's + button. If containers are set to open on a left-click, a left-click works too.",
+    description: "Right-click or hold a stack's + button to open a container tab in that stack, like the main + button. If you've set containers to open on a left-click, that works too.",
     default: true,
     init(ctx) {
       // Firefox's + buttons open a menu filled by createUserContextMenu, whose
@@ -4339,7 +4441,7 @@
       }
 
       // No preventDefault: Floorp's own drop logic stays untouched. On
-      // windowRoot, so it still sees drags that Stack-aware drag and drop
+      // windowRoot, so it still sees drags that Dragging tabs and stacks
       // takes over (tabs from another window) and keeps from the window.
       ctx.listen(window.windowRoot, "dragover", (e) => {
         const path = e.composedPath();
@@ -4392,7 +4494,7 @@
     id: "stack-arrow-hold-scroll",
     parent: "stack-edge-scroll",
     name: "Hold the arrows to scroll",
-    description: "Holding down a stack's scroll arrow keeps scrolling, like the main tab bar.",
+    description: "Holding down a stack's scroll arrow keeps it scrolling, like on the main tab bar.",
     default: true,
     standalone: ["stacktab-drag-edge-scroll.uc.js"],
     init(ctx) {
@@ -4482,7 +4584,7 @@
     id: "stack-multiselect",
     category: "stacks",
     name: "Select several stack tabs",
-    description: "Ctrl-click and Shift-click select several stack tabs at once. Dragging, the tab menu and anything else that works on selected tabs then applies to all of them.",
+    description: "Ctrl-click and Shift-click to select several stack tabs. Dragging them, the tab menu and anything else that works on selected tabs then works on all of them.",
     default: true,
     standalone: ["stacktab-multiselect.uc.js"],
     init(ctx) {
@@ -4658,8 +4760,8 @@
   defineFeature({
     id: "stack-add-to-group-menu",
     category: "stacks",
-    name: "Add Tab to Group for stack tabs",
-    description: "Stack tabs get the \"Add Tab to Group\" menu item, to move a tab straight into another stack or group. A new group made from a stack tab appears right after its stack.",
+    name: "\"Add Tab to Group\" on stack tabs",
+    description: "Stack tabs get the \"Add Tab to Group\" menu item, to move a tab into another stack or group. A new group made from a stack tab goes right after its stack.",
     default: true,
     standalone: ["stacktab-move-to-group-menu.uc.js"],
     init(ctx) {
@@ -4719,7 +4821,7 @@
     id: "stack-hover-preview",
     category: "stacks",
     name: "Hover previews",
-    description: "Hovering a stack tab shows the tab preview card, like normal tabs, and hovering a stack shows just its name.",
+    description: "Hovering a stack tab shows its preview card like a normal tab, and hovering a stack shows just its name.",
     default: true,
     standalone: ["stacktab-hover-preview.uc.js"],
     init(ctx) {
@@ -4916,7 +5018,7 @@
     id: "stack-scroll-to-tab",
     category: "stacks",
     name: "Keep the current tab in view",
-    description: "When a stack has more tabs than fit, they scroll to keep the tab you're on in view, including new tabs and the tab you land on after closing one, like the main tab bar.",
+    description: "In a stack with more tabs than fit, the tab you're on stays in view, including new tabs and the tab you go to after closing one, like on the main tab bar.",
     default: true,
     init(ctx) {
       // Firefox's rules for the main tab bar (tabs.js), which Floorp's stack
@@ -5261,7 +5363,7 @@
     id: "stack-auto-title",
     category: "stack-features",
     name: "Auto-title stacks",
-    description: "Unnamed stacks show the title of the tab you're using in them, and new stacks skip the naming popup. Naming a stack shows its name again; clearing the name brings the title back.",
+    description: "Stacks without a name show the title of the tab you're using in them, and new stacks don't ask for a name. Name a stack to show its name instead; clear the name to get the title back.",
     default: false,
     standalone: ["stacktab-auto-title.uc.js"],
     init(ctx) {
@@ -5394,7 +5496,7 @@
     id: "auto-title-icon",
     parent: "stack-auto-title",
     name: "Show the tab's icon",
-    description: "Also shows that tab's icon, and its loading animation, in place of the stack symbol.",
+    description: "Also shows that tab's icon, and its loading animation, instead of the stack symbol.",
     default: true,
     standalone: ["stacktab-auto-title.uc.js"],
     init(ctx) {
@@ -5406,7 +5508,7 @@
     id: "link-opens-stack",
     parent: "stack-auto-title",
     name: "Links from normal tabs make a stack",
-    description: "Opening a link in a new tab from a normal tab turns that tab and the new one into a stack, titled after the tab you're using.",
+    description: "Opening a link in a new tab from a normal tab puts both tabs in a new stack, titled after the tab you're on.",
     default: false,
     init(ctx) {
       // Firefox records where a tab came from (tab.openerTab: the tab of
@@ -5444,7 +5546,7 @@
     id: "single-tab-unstack",
     parent: "stack-auto-title",
     name: "One-tab stacks become normal tabs",
-    description: "When an auto-titled stack is down to one tab, the stack goes away and that tab stays in its place as a normal tab.",
+    description: "When an auto-titled stack is down to one tab, it turns back into a normal tab in the same place.",
     default: false,
     init(ctx) {
       // When a tab closes in or leaves an unnamed stack (TabClose; TabUngrouped
@@ -5482,7 +5584,7 @@
     id: "stack-tab-icons",
     category: "stack-features",
     name: "Tab icons on named stacks",
-    description: "Named stacks show the icon of the tab you're using in them, and its loading animation, in place of the stack symbol.",
+    description: "Named stacks show the icon of the tab you're using in them, and its loading animation, instead of the stack symbol.",
     default: false,
     init(ctx) {
       // Every chip Auto-title stacks isn't titling (it marks those with
@@ -5548,8 +5650,8 @@
   defineFeature({
     id: "unload-stack-menu",
     category: "stack-features",
-    name: "Unload Stack menu item",
-    description: "Adds \"Unload Stack\" and \"Unload Group\" to a stack's or group's menu, to unload all its tabs.",
+    name: "Unload a whole stack",
+    description: "Adds \"Unload Stack\" (or \"Unload Group\") to a stack's or group's menu, to unload all of its tabs at once.",
     default: false,
     standalone: ["stacktab-unload-context-menu-item.uc.js"],
     init(ctx) {
@@ -5622,8 +5724,8 @@
   defineFeature({
     id: "stack-workspace-menu",
     category: "stack-features",
-    name: "Move Stack to Another Workspace",
-    description: "Adds \"Move Stack to Another Workspace\" and \"Move Group to Another Workspace\" to a stack's or group's menu, to send it with all its tabs to another workspace while you stay where you are.",
+    name: "Move stacks to another workspace",
+    description: "Adds \"Move Stack to Another Workspace\" (or \"Move Group to Another Workspace\") to a stack's or group's menu, to send it with all its tabs to another workspace. You stay where you are.",
     default: false,
     init(ctx) {
       // Floorp's own "Move Tab to Another Workspace" only moves tabs. This
@@ -5709,7 +5811,7 @@
     id: "keep-stack-on-last-close",
     category: "stack-features",
     name: "Keep stacks when their last tab closes",
-    description: "Closing the last tab in a stack leaves a new tab page in it, so the stack stays.",
+    description: "Closing the last tab in a stack leaves a new tab in it, so the stack doesn't disappear.",
     default: false,
     standalone: ["stacktab-close-last-becomes-newtab.uc.js"],
     init(ctx) {
@@ -5728,7 +5830,9 @@
       }));
       guardBulk("removeTabGroup");
       guardBulk("removeTabs");
-      const inBulkClose = () => bulk > 0 || U.callStackIncludes(/removeTabGroup|removeTabs|removeAllTabs/);
+      // Also Floorp deleting or archiving a workspace, which closes its tabs
+      // one by one (a new tab would stay behind in the current workspace).
+      const inBulkClose = () => bulk > 0 || U.callStackIncludes(/removeTabGroup|removeTabs|removeAllTabs|removeTabByWorkspaceId/);
 
       function isLastInStack(tab, group) {
         const members = group.tabs
@@ -5778,8 +5882,8 @@
   defineFeature({
     id: "theme-stack-colors",
     category: "appearance",
-    name: "Theme-matched stack colors",
-    description: "New stacks start white on dark themes and gray on light ones, and White is added to the colors for stacks and groups.",
+    name: "Stack colors that match your theme",
+    description: "New stacks start white on dark themes and gray on light ones. Also adds White to the colors you can pick for stacks and groups.",
     default: false,
     standalone: ["stacktab-auto-title.uc.js"],
     init(ctx) {
@@ -6754,7 +6858,7 @@
     id: "stacks-look-like-tabs",
     category: "appearance",
     name: "Stacks look like normal tabs (Experimental)",
-    description: "Stacks look exactly like normal tabs in whatever theme and design you use: the same shape, spacing, text, icon and close button, and the same hover and selected colors. They shrink down to your minimum tab width, like tabs. Only their colored outline and tab count set them apart.",
+    description: "Stacks look just like normal tabs in your theme and design: the same shape, text, icon and close button, and the same colors when hovered or selected. They shrink to your minimum tab width, like tabs. Only their colored outline and tab count set them apart.",
     default: false,
     init(ctx) {
       // The chip copies a real tab (see TabLook). The stack's colored outline
@@ -7010,7 +7114,7 @@
     id: "stack-whole-outline",
     parent: "stacks-look-like-tabs",
     name: "Show the whole outline",
-    description: "On themes where tabs run past the bottom of the tab bar, stacks end at its edge so their outline shows all the way around.",
+    description: "On themes where tabs run past the bottom of the tab bar, stacks stop at its edge so their whole outline shows.",
     default: true,
     init() {
       // Nothing to set up: "Stacks look like normal tabs" checks whether this
@@ -7023,7 +7127,7 @@
     id: "stack-tabs-look-like-tabs",
     category: "appearance",
     name: "Stack tabs look like normal tabs (Experimental)",
-    description: "Tabs in the stack bar look exactly like normal tabs in whatever theme and design you use: the same size, shape, spacing, text, icon, close button, separators and container line (with its animation), and the same hover and selected colors. They shrink down to your minimum tab width before the stack bar scrolls. The stack bar is as tall as the tab bar.",
+    description: "The tabs in a stack's bar look just like normal tabs in your theme and design: the same size, shape, text, icon, close button, separators and container line, and the same colors when hovered or selected. They shrink to your minimum tab width before the bar starts scrolling, and the bar is as tall as the tab bar.",
     default: false,
     init(ctx) {
       // A stack tab copies a real tab (see TabLook), at a tab's size: the
@@ -7341,7 +7445,7 @@
             margin: 0 !important; margin-inline-end: ${g.iconGap}px !important;
             opacity: ${normal.iconOpacity} !important;
           }
-          /* A tab playing sound has its icon closer to the speaker (Audio button). */
+          /* A tab playing sound has its icon closer to the speaker (Speaker button). */
           ${P}[uc-audio] ${ICONBOX} { margin-inline-end: var(--tab-icon-margin-inline-end, 2px) !important; }
           ${H} ${ICONBOX} { opacity: ${hover.iconOpacity} !important; }
           ${S} ${ICONBOX} { opacity: ${selected.iconOpacity} !important; }
@@ -7426,7 +7530,7 @@
     id: "compact-stacks",
     category: "appearance",
     name: "Compact stacks",
-    description: "Stacks take up less room than normal tabs, so more of them fit in the tab bar. A stack whose name doesn't fit grows to show it, up to a normal tab's width.",
+    description: "Stacks take less room than normal tabs, so more of them fit in the tab bar. A stack with a long name grows to show it, up to a normal tab's width.",
     default: false,
     standalone: ["stackktab-compact-stacks.uc.css"],
     init(ctx) {
@@ -7461,7 +7565,7 @@
     id: "auto-title-full-width",
     parent: "compact-stacks",
     name: "Full width for auto-titled stacks",
-    description: "With Auto-title stacks on, auto-titled stacks are as wide as a normal tab, while named stacks stay compact.",
+    description: "When Auto-title stacks is on, auto-titled stacks are as wide as normal tabs, while named stacks stay compact.",
     default: false,
     requires: ["stack-auto-title"],
     standalone: ["stacktab-auto-title-full-width.uc.css"],
@@ -7484,7 +7588,7 @@
     id: "full-width-container-lines",
     category: "appearance",
     name: "Full-width container lines",
-    description: "A container tab's colored line spans the whole tab even when the tab isn't selected, on normal tabs and on stack tabs.",
+    description: "A container tab's colored line goes all the way across the tab, even when it isn't selected. Stack tabs too.",
     default: false,
     init(ctx) {
       // Lepton's stylesheet (Lepton, Photon, Protonfix) draws the line under
@@ -7509,7 +7613,7 @@
     id: "tab-marks",
     category: "browser",
     name: "Tab marks",
-    description: "Adds \"Mark Tab\" to the tab menu to give tabs, including stack tabs, a colored border so they're easy to find. Works on several selected tabs, and marks are kept after a restart.",
+    description: "Adds \"Mark Tab\" to the tab menu to give tabs a colored border so they're easy to spot. Works on stack tabs and on several selected tabs at once, and marks stay after a restart.",
     default: false,
     standalone: ["floorp-tab-marks.uc.js"],
     init(ctx) {
@@ -7735,8 +7839,10 @@
       const nothing = (name) =>
         Hooks.original(gBrowser, name)?.constructor?.name === "AsyncFunction" ? Promise.resolve() : undefined;
 
+      // Not while Floorp deletes or archives a workspace: that closes its tabs
+      // one by one, and a tab kept would be left in no workspace.
       ctx.hook(gBrowser, "removeTab", function (next, tab, ...rest) {
-        if (bulk || !marked(tab) || confirmOne(tab)) return next(tab, ...rest);
+        if (bulk || !marked(tab) || U.closingWorkspace() || confirmOne(tab)) return next(tab, ...rest);
         return nothing("removeTab");
       }, { priority: -5 });
 
@@ -7766,7 +7872,7 @@
     id: "workspace-scroll",
     category: "browser",
     name: "Scroll to switch workspaces",
-    description: "Scroll the mouse wheel over the Workspaces button to switch workspaces, stopping at the first and last.",
+    description: "Scroll the mouse wheel over the Workspaces button to switch workspaces. It stops at the first and last one.",
     default: false,
     standalone: ["floorp-workspaces-scroll-switch.uc.js"],
     init(ctx) {
@@ -7827,10 +7933,451 @@
   });
 
   defineFeature({
+    id: "shared-workspaces",
+    category: "browser",
+    name: "Share workspaces between windows",
+    description: "Every window can open every workspace, and each workspace's tabs stay together in one window. Switching to a workspace another window is showing swaps the two windows' workspaces. Switching to one that isn't open anywhere brings its tabs to this window. A tab moved to a workspace goes to the window showing it. Closing a window keeps its tabs, so you can switch back to them from another window. A new window opens on an empty workspace, and one made just for it is removed if you leave it unused. Turning this on gathers each workspace's tabs into one window.",
+    default: false,
+    init(ctx) {
+      // Floorp's workspace list is one pref for every window, but each window
+      // has its own tabs in each workspace and its own current workspace
+      // (workspacesFuncs). This keeps a workspace's tabs in the window showing
+      // it, moving them between windows with Firefox's adoptTab /
+      // adoptTabGroup / adoptSplitView (pages stay loaded; stacks, groups,
+      // split views and order are kept; nested-stacks and moved-stack-keeps-tab
+      // handle their parts of a move). Floorp creates a tab, or switches away,
+      // when a window's current workspace runs out of tabs, so a window only
+      // loses the tabs of a workspace it isn't showing: before tabs leave, the
+      // windows switch (onto a placeholder tab if they have no tab of the new
+      // workspace yet), and placeholders are closed once the real tabs are in.
+      if (window.PrivateBrowsingUtils?.isWindowPrivate(window)) return; // private windows keep their own
+      const WS = U.WS_ATTR;
+      const LAST = U.WS_LAST_SHOWN_ATTR;
+      const BUSY = "__ucWorkspacePoolBusy"; // on every window while tabs move
+      const READY = "__ucWorkspacePoolReady";
+      const FRESH_PREF = "uc.floorp-improvements-cache.pool-fresh"; // workspaces made for new windows
+      const strip = (v) => (v ? v.replace(/[{}]/g, "") : null);
+      const wsOf = (t) => strip(t.getAttribute(WS));
+
+      const poolWindows = () => [...Services.wm.getEnumerator("navigator:browser")].filter(w =>
+        !w.closed && w.gBrowser && typeof w.workspacesFuncs?.getSelectedWorkspaceID === "function" &&
+        !w.PrivateBrowsingUtils?.isWindowPrivate(w) && w[READY]);
+      const shownIn = (w) => {
+        try { return w.workspacesFuncs.getSelectedWorkspaceID(); } catch (e) { return null; }
+      };
+      const tabsOf = (w, id, except = new Set()) => w.gBrowser.tabs.filter(t => !t.closing && !except.has(t) && wsOf(t) === id);
+      const isBusy = () => !!window[BUSY];
+      function withBusy(fn) {
+        const wins = [...Services.wm.getEnumerator("navigator:browser")];
+        for (const w of wins) w[BUSY] = (w[BUSY] || 0) + 1;
+        try {
+          return fn();
+        } finally {
+          for (const w of wins) if (!w.closed) w[BUSY]--;
+        }
+      }
+      // A tab drag in progress: moving tabs between windows would end it.
+      const dragging = () => {
+        try {
+          return !!Cc["@mozilla.org/widget/dragservice;1"].getService(Ci.nsIDragService).getCurrentSession(window);
+        } catch (e) {
+          return false;
+        }
+      };
+
+      // Moves the tabs of workspace `id` from `from` to the end of `to`
+      // (pinned tabs to the end of the pinned ones): whole stacks, groups and
+      // split views as they are, other tabs one by one, in order. They keep
+      // their workspace and "last shown" mark.
+      function bring(from, to, id, except = new Set()) {
+        const tabs = tabsOf(from, id, except);
+        if (!tabs.length || from === to) return [];
+        const moving = new Set(tabs);
+        const units = [];
+        const seen = new Set();
+        for (const t of tabs) {
+          const g = t.group;
+          if (g && g.tabs.every(x => moving.has(x))) {
+            if (!seen.has(g)) units.push(g);
+            seen.add(g);
+            continue;
+          }
+          const sv = t.splitview;
+          if (sv && sv.tabs.every(x => moving.has(x))) {
+            if (!seen.has(sv)) units.push(sv);
+            seen.add(sv);
+            continue;
+          }
+          units.push(t);
+        }
+        const arrived = [];
+        const marks = new Map();
+        // Each new tab gets its workspace as it opens (this runs before
+        // Floorp's window listener, which gives a tab without one the window's
+        // current workspace), so nothing sees it in the wrong one: a tab
+        // landing in a group with another workspace is made to join it
+        // (workspace-split-stacks).
+        const onOpen = (e) => {
+          e.target.setAttribute(WS, id);
+          arrived.push(e.target);
+        };
+        const onClose = (e) => {
+          const next = e.detail?.adoptedBy;
+          const mark = e.target.getAttribute(LAST);
+          if (next && mark) marks.set(next, mark);
+        };
+        to.gBrowser.tabContainer.addEventListener("TabOpen", onOpen);
+        from.gBrowser.tabContainer.addEventListener("TabClose", onClose);
+        const tb = to.gBrowser;
+        const collapse = []; // adoptTabGroup always makes the new group expanded
+        try {
+          for (const u of units) {
+            // A sub-stack may have moved with its parent (nested-stacks).
+            if (!u.isConnected || u.ownerDocument !== from.document || u.closing) continue;
+            try {
+              if (u.localName === "tab-group") {
+                const wasCollapsed = !!u.collapsed;
+                const g = tb.adoptTabGroup(u, { tabIndex: tb.tabs.length });
+                if (wasCollapsed && g) collapse.push(g);
+              } else if (u.tabs && typeof tb.adoptSplitView === "function") tb.adoptSplitView(u, { tabIndex: tb.tabs.length });
+              else if (u.tabs) for (const t of [...u.tabs]) tb.adoptTab(t, { tabIndex: tb.tabs.length });
+              else {
+                // At the end, then pinned: adoptTab puts a tab into the group
+                // of the tab at its index, and just after the pinned tabs that
+                // can be a group.
+                const pinned = u.pinned;
+                const t = tb.adoptTab(u, { tabIndex: tb.tabs.length });
+                if (pinned && t && !t.pinned) tb.pinTab(t);
+              }
+            } catch (e) {
+              console.error("[FBFI] shared-workspaces: couldn't move", u, e);
+            }
+          }
+        } finally {
+          to.gBrowser.tabContainer.removeEventListener("TabOpen", onOpen);
+          from.gBrowser.tabContainer.removeEventListener("TabClose", onClose);
+        }
+        for (const t of arrived) {
+          if (!t.isConnected) continue;
+          t.setAttribute(WS, id);
+          const mark = marks.get(t);
+          if (mark) t.setAttribute(LAST, mark);
+        }
+        for (const g of collapse) if (g.isConnected) g.collapsed = true;
+        return arrived;
+      }
+
+      // A blank tab of workspace `id` at the end of `w`, so `w` can show that
+      // workspace before its tabs arrive.
+      function placeholder(w, id) {
+        const t = w.gBrowser.addTab("about:blank", {
+          skipAnimation: true,
+          tabIndex: w.gBrowser.tabs.length,
+          triggeringPrincipal: U.systemPrincipal(),
+        });
+        t.setAttribute(WS, id);
+        return t;
+      }
+      // Selects the tab `w` was last on in workspace `id`, then closes the
+      // placeholders of that workspace if it has other tabs now.
+      function settle(w, id, temps) {
+        const tempSet = new Set(temps);
+        const tabs = tabsOf(w, id, tempSet);
+        if (!tabs.length) return;
+        // The tab it's on, if it's one of them (placeholders aren't).
+        const marked = tabs.filter(t => strip(t.getAttribute(LAST)) === id);
+        const keep = tabs.includes(w.gBrowser.selectedTab) ? w.gBrowser.selectedTab : null;
+        w.gBrowser.selectedTab = keep ?? marked.at(-1) ?? tabs.find(t => !t.pinned) ?? tabs[0];
+        for (const t of temps) if (t?.isConnected && !t.closing) w.gBrowser.removeTab(t, { animate: false, skipSessionStore: true });
+      }
+      const refresh = (w) => {
+        const id = shownIn(w);
+        if (id) w.workspacesFuncs.changeWorkspace(id);
+      };
+
+      // ---- workspaces: free ones, new ones, unused ones ----
+      const readFresh = () => {
+        try { return JSON.parse(Services.prefs.getStringPref(FRESH_PREF, "[]")) || []; } catch (e) { return []; }
+      };
+      const writeFresh = (ids) => Services.prefs.setStringPref(FRESH_PREF, JSON.stringify([...new Set(ids)]));
+      const shownAnywhere = (id) => poolWindows().some(w => shownIn(w) === id);
+      const tabsAnywhere = (id) => poolWindows().some(w => tabsOf(w, id).length);
+      // A workspace no window shows that has no tabs anywhere.
+      const freeEmpty = (except) => U.workspaces().map(w => w.id).find(id => id !== except && !shownAnywhere(id) && !tabsAnywhere(id)) ?? null;
+      // A new workspace, made in `w` (Floorp switches `w` to it).
+      function create(w) {
+        const id = w.workspacesFuncs.createNoNameWorkspace();
+        if (id) writeFresh([...readFresh(), id]);
+        return id;
+      }
+      const BLANK = /^about:(newtab|home|blank|privatebrowsing)$/;
+      const isBlank = (t) => {
+        const b = t.linkedBrowser;
+        const url = b?.currentURI?.spec ?? "";
+        return (BLANK.test(url) || url === window.BROWSER_NEW_TAB_URL) && !b?.canGoBack;
+      };
+      // A workspace made for a new window and left without being used (only
+      // blank new tabs) is removed once no window shows it; one that was used
+      // is kept for good.
+      function cleanFresh() {
+        const fresh = readFresh();
+        if (!fresh.length) return;
+        const keep = [];
+        for (const id of fresh) {
+          if (!U.workspaces().some(w => w.id === id)) continue;
+          if (shownAnywhere(id)) {
+            keep.push(id);
+            continue;
+          }
+          const tabs = poolWindows().flatMap(w => tabsOf(w, id).map(t => [w, t]));
+          if (tabs.some(([, t]) => !isBlank(t))) continue; // used: kept, no longer fresh
+          for (const [w, t] of tabs) w.gBrowser.removeTab(t, { animate: false, skipSessionStore: true });
+          removeWorkspace(id);
+        }
+        writeFresh(keep);
+      }
+      // Floorp doesn't expose its delete; its store observer picks this up.
+      function removeWorkspace(id) {
+        try {
+          const store = JSON.parse(Services.prefs.getStringPref("floorp.workspaces.v4.store", "{}"));
+          if (!Array.isArray(store.data) || store.defaultID === id || store.data.length < 2) return;
+          store.data = store.data.filter(([k]) => k !== id);
+          store.order = (store.order || []).filter(k => k !== id);
+          Services.prefs.setStringPref("floorp.workspaces.v4.store", JSON.stringify(store));
+        } catch (e) {
+          console.error("[FBFI] shared-workspaces: couldn't remove workspace", id, e);
+        }
+      }
+
+      // ---- switching ----
+      // After this window switched from `from` to `to`: the window that was
+      // showing `to` gets `from` (a swap), the tabs of `to` come here from
+      // every window, the tabs of `from` go to that window, and each shows
+      // the tab it was last on there.
+      function finish(from, to, temps) {
+        const others = poolWindows().filter(w => w !== window);
+        const holders = others.filter(w => shownIn(w) === to);
+        const held = [];
+        holders.forEach((h, i) => {
+          const next = i === 0 && from && from !== to ? from : (freeEmpty(to) ?? create(h));
+          const t = tabsOf(h, next).length ? null : placeholder(h, next);
+          h.workspacesFuncs.changeWorkspace(next);
+          held.push([h, next, t ? [t] : []]);
+        });
+        for (const w of others) bring(w, window, to);
+        if (held.length && held[0][1] === from) bring(window, held[0][0], from);
+        settle(window, to, temps);
+        for (const [h, id, ts] of held) settle(h, id, ts);
+        refresh(window);
+        for (const [h] of held) refresh(h);
+        cleanFresh();
+      }
+      const needsPool = (to) => poolWindows().some(w => w !== window && (shownIn(w) === to || tabsOf(w, to).length));
+
+      ctx.async((async () => {
+        // Floorp sets its workspaces up after session restore.
+        for (let i = 0; i < 100 && typeof window.workspacesFuncs?.changeWorkspace !== "function"; i++) {
+          await new Promise(r => ctx.timeout(r, 200));
+        }
+        ctx.require(U.workspacesOn(), "Floorp's workspaces");
+        await window.SessionStore?.promiseAllWindowsRestored;
+        for (let i = 0; i < 50 && !shownIn(window); i++) await new Promise(r => ctx.timeout(r, 200));
+        if (!ctx.alive) return;
+        let last = shownIn(window);
+
+        // Every switch through workspacesFuncs (the menu, see below; the
+        // wheel, drag-and-drop's switching) is done here, before Floorp
+        // creates a tab for a workspace this window has none of.
+        ctx.hook(window.workspacesFuncs, "changeWorkspace", (next, to) => {
+          const from = shownIn(window);
+          if (isBusy() || dragging() || !to || to === from || !needsPool(to)) return next(to);
+          return withBusy(() => {
+            const temps = tabsOf(window, to).length ? [] : [placeholder(window, to)];
+            const result = next(to);
+            last = to;
+            finish(from, to, temps);
+            return result;
+          });
+        });
+        // Floorp's workspaces menu calls its service directly: take the click.
+        ctx.listen(window, "command", (e) => {
+          const btn = e.target?.closest?.(".workspaceButton");
+          const id = btn?.closest("#workspacesToolbarButtonPanel") && btn.getAttribute("data-workspaceId");
+          if (!id || !needsPool(id)) return;
+          e.stopPropagation();
+          window.workspacesFuncs.changeWorkspace(id);
+        }, { capture: true });
+
+        // Archiving or deleting a workspace (its menu) takes this window's
+        // tabs of it, and switches this window to the default workspace if
+        // it's showing it. So first every window showing it switches to a
+        // workspace no other window shows (the default one if it can), and
+        // its tabs in other windows come here.
+        let menuWorkspace = null;
+        ctx.listen(window, "popupshowing", (e) => {
+          if (e.target?.id !== "workspaces-toolbar-item-context-menu") return;
+          let el = document.popupNode ?? e.explicitOriginalTarget; // as Floorp finds it
+          while (el && !el.id?.startsWith?.("workspace-")) el = el.parentElement;
+          menuWorkspace = el ? el.id.slice("workspace-".length) : null;
+        }, { capture: true });
+        ctx.listen(window, "command", (e) => {
+          const key = e.target?.getAttribute?.("data-floorp-context-menu-key");
+          if (key !== "floorp.workspaces.archive" && key !== "floorp.workspaces.delete") return;
+          const id = menuWorkspace;
+          if (!id || isBusy() || dragging() || U.workspaces().length < 2) return;
+          const wins = [window, ...poolWindows().filter(w => w !== window)];
+          if (wins.length < 2) return;
+          let defaultId = null;
+          try {
+            defaultId = JSON.parse(Services.prefs.getStringPref("floorp.workspaces.v4.store", "{}")).defaultID;
+          } catch (err) {}
+          const ids = U.workspaces().map(w => w.id).sort((a, b) => (b === defaultId) - (a === defaultId));
+          for (const w of wins) {
+            if (shownIn(w) !== id) continue;
+            const next = ids.find(x => x !== id && !shownAnywhere(x));
+            if (next) w.workspacesFuncs.changeWorkspace(next);
+            else create(w);
+          }
+          withBusy(() => {
+            for (const w of wins) if (w !== window) bring(w, window, id);
+            refresh(window);
+          });
+        }, { capture: true });
+
+        // Other switches (keyboard shortcuts, Floorp's own panels) are sorted
+        // out right after; a blank tab Floorp just made for the workspace goes
+        // once its tabs are in.
+        const openedAt = new WeakMap();
+        ctx.listen(gBrowser.tabContainer, "TabOpen", (e) => openedAt.set(e.target, Date.now()));
+        ctx.observeTopic("floorp.workspaces.changed", () => {
+          const now = shownIn(window);
+          if (now === last) return;
+          const from = last;
+          last = now;
+          if (isBusy() || dragging() || !now || !needsPool(now)) return;
+          withBusy(() => {
+            const made = tabsOf(window, now).filter(t => isBlank(t) && Date.now() - (openedAt.get(t) ?? 0) < 1500);
+            finish(from, now, made);
+          });
+        });
+
+        // A tab moved to a workspace another window is showing goes there.
+        const pending = new Set();
+        const sendAway = () => {
+          const ids = [...pending];
+          pending.clear();
+          if (isBusy() || dragging()) return;
+          withBusy(() => {
+            for (const id of ids) {
+              if (id === shownIn(window)) continue;
+              const holder = poolWindows().find(w => w !== window && shownIn(w) === id);
+              if (holder && bring(window, holder, id).length) refresh(holder);
+            }
+          });
+        };
+        ctx.observe(gBrowser.tabContainer, { subtree: true, attributes: true, attributeFilter: [WS] }, (records) => {
+          if (isBusy()) return;
+          for (const r of records) {
+            const id = r.target.localName === "tab" && wsOf(r.target);
+            if (id) pending.add(id);
+          }
+          if (pending.size) ctx.timeout(sendAway, 0);
+        });
+
+        // Closing a window keeps its tabs: they move into another window,
+        // hidden there, while a placeholder is what closes.
+        ctx.optional(() => ctx.hook(window, "WindowIsClosing", (next, ...args) => {
+          const closing = next(...args);
+          if (!closing || isBusy()) return closing;
+          const others = poolWindows().filter(w => w !== window);
+          const target = others.find(w => w === Services.wm.getMostRecentWindow("navigator:browser")) ?? others[0];
+          if (!target) return closing; // the last window: the session keeps them
+          withBusy(() => {
+            const keep = placeholder(window, shownIn(window));
+            gBrowser.selectedTab = keep;
+            const ids = new Set(gBrowser.tabs.map(wsOf).filter(Boolean));
+            for (const id of ids) bring(window, target, id, new Set([keep]));
+            window[READY] = false;
+            refresh(target);
+            cleanFresh();
+          });
+          return closing;
+        }), "keeping a closed window's tabs");
+
+        // ---- this window joining the pool ----
+        withBusy(() => {
+          const others = poolWindows().filter(w => w !== window);
+          const shown = shownIn(window);
+          const startedAt = Services.startup.getStartupInfo?.().sessionRestored?.getTime?.();
+          const isNew = !!startedAt && window.performance.timeOrigin > startedAt + 500;
+          const taken = (id) => others.some(w => shownIn(w) === id);
+          if (isNew && (taken(shown) || others.some(w => tabsOf(w, shown).length))) {
+            // A new window: a workspace nobody uses that has no tabs, or a new one.
+            const own = gBrowser.tabs.filter(t => !t.closing);
+            const selected = gBrowser.selectedTab;
+            const before = new Set(gBrowser.tabs);
+            const id = freeEmpty(shown) ?? create(window);
+            const made = gBrowser.tabs.filter(t => !before.has(t)); // Floorp's tab for a new workspace
+            for (const t of own) {
+              t.setAttribute(WS, id);
+              t.removeAttribute(LAST);
+            }
+            if (own.includes(selected)) gBrowser.selectedTab = selected;
+            if (made.length && own.length) for (const t of made) gBrowser.removeTab(t, { animate: false, skipSessionStore: true });
+            window[READY] = true;
+            refresh(window);
+          } else {
+            // Turning this on with several windows open (or a session from
+            // before): every workspace's tabs end up in one window, merged,
+            // with nothing closed.
+            window[READY] = true;
+            const holderOf = (id) => others.find(w => shownIn(w) === id);
+            const keeperOf = (id) => holderOf(id) ?? others.find(w => tabsOf(w, id).length);
+            const mine = () => new Set(gBrowser.tabs.filter(t => !t.closing).map(wsOf).filter(Boolean));
+            const temps = [];
+            const holder = shown && holderOf(shown);
+            if (holder) {
+              // Another window shows this workspace: this window's tabs of it
+              // join them there, and this window shows another one: one it has
+              // tabs of that no window shows, or an empty one, or a new one.
+              const next = [...mine()].find(id => id !== shown && !holderOf(id)) ?? freeEmpty(shown);
+              if (next) {
+                if (!tabsOf(window, next).length) temps.push(placeholder(window, next));
+                window.workspacesFuncs.changeWorkspace(next);
+              } else {
+                create(window);
+              }
+              bring(window, holder, shown);
+            }
+            const now = shownIn(window);
+            // This window's tabs of other workspaces go to the window that has
+            // that workspace, shown or hidden.
+            for (const id of mine()) {
+              if (id === now) continue;
+              const keeper = keeperOf(id);
+              if (keeper) bring(window, keeper, id);
+            }
+            // Its own workspace's tabs that other windows have come here.
+            if (now) for (const w of others) bring(w, window, now);
+            if (now) settle(window, now, temps);
+            refresh(window);
+            for (const w of others) refresh(w);
+            cleanFresh();
+          }
+          last = shownIn(window);
+        });
+      })());
+      ctx.onCleanup(() => {
+        window[READY] = false;
+      });
+    },
+  });
+
+  defineFeature({
     id: "about-singletons",
     category: "browser",
-    name: "One Floorp Hub and Settings tab",
-    description: "Floorp Hub and Settings each open in only one tab, with the normal tabs; opening them again switches to that tab.",
+    name: "Only one Floorp Hub and Settings tab",
+    description: "Floorp Hub and Settings each open in just one tab, among your normal tabs. Opening them again switches to that tab.",
     default: false,
     standalone: ["floorp-about-page-singletons.uc.js"],
     init(ctx) {
@@ -7862,7 +8409,9 @@
 
       ctx.hook(gBrowser, "addTab", function (next, uri, ...rest) {
         const base = baseFor(uri);
-        if (!base) return next(uri, ...rest);
+        // Restoring an archived workspace puts its own tab back (handing it
+        // the open one would move that one into the restored workspace).
+        if (!base || U.callStackIncludes(/restoreTabsFromSnapshot/)) return next(uri, ...rest);
         const existing = living(base);
         if (existing) {
           gBrowser.selectedTab = existing;
