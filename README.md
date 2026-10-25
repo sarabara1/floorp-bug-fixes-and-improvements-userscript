@@ -10,81 +10,83 @@ Every feature can be turned on or off from a built-in settings page, and changes
 
 Fixes for bugs in Floorp's tab stacks, tab bar, workspaces and sidebar.
 
-- **Stack-aware drag and drop**: Tabs and stacks move around the tab bar smoothly without accidentally merging into stacks. Tabs can move between stacks, tabs from other windows can join a stack, and links, text and files can be dropped onto a stack or its tabs.
-  - *Drop into other workspaces* (on by default): Hold a dragged tab, stack, group, link, text, image or file over the workspaces button to open its menu, then drop it on a workspace: tabs, stacks and groups move to the end of it and links open there, while you stay in the workspace you're in.
-  - *Switch workspaces while dragging* (off by default): Hold a drag over a workspace in the workspaces menu to switch to it, taking dragged tabs, stacks and groups along, so you can drop them exactly where you want in its tab bar.
-- **Double new tab button**: Fixes a random startup bug where the new tab button appears twice and dragging tabs stops working.
-- **Close buttons when a stack comes first**: Fixes normal tabs losing their close buttons whenever the tab bar starts with a stack, as if the tab bar were full.
-- **Tab menu text on startup**: Fixes the tab menu showing only icons, with no text, when the browser starts on a stack tab.
-- **Stacks in new windows**: Fixes new windows sometimes opening with their stacks turned into plain tab groups.
-- **Resizable sidebar**: Lets the sidebar be made much wider on themes that limit its width.
-- **Container line on the selected tab**: In the Lepton, Photon and Protonfix designs, the selected tab shows its container's colored line again, across the tab.
-- **Stacks copied into another workspace**: Fixes stacks showing up in two workspaces at once after one of their tabs was moved to another workspace or reopened. A moved tab now leaves its stack, a reopened tab stays out of other workspaces' stacks, and stacks already split this way become one stack in each workspace.
-- **Reopened tabs go back to their workspace**: Reopening a closed tab brings it back to the workspace it was closed in, and into its stack, and switches to that workspace.
-- **Moved stacks keep their tab**: A stack moved to another window opens on the tab you were using in it, instead of its first or last tab.
+- **Dragging tabs and stacks**: Tabs and stacks move smoothly when you drag them along the tab bar, without dropping into a stack by accident. You can also drag tabs from one stack to another, drag tabs from other windows into a stack, and drop links, text and files onto a stack or its tabs.
+  - *Drop on other workspaces* (on by default): Hold anything you're dragging over the Workspaces button to open its menu, then drop it on a workspace. Tabs, stacks and groups move to the end of that workspace, and links, text and files open there. You stay in the workspace you're in.
+  - *Switch workspaces while dragging* (off by default): Hold a drag over a workspace in the Workspaces menu to switch to it. The tabs you're dragging come along, so you can drop them anywhere in its tab bar.
+- **Two new tab buttons**: Fixes a bug where the new tab button sometimes shows up twice after the browser starts, and dragging tabs stops working.
+- **Missing close buttons**: Fixes normal tabs losing their close buttons when the first thing in the tab bar is a stack.
+- **Empty tab menu**: Fixes the tab menu showing only icons, with no text, when the browser starts on a stack tab.
+- **Stacks in new windows**: Fixes stacks sometimes turning into plain tab groups in new windows.
+- **Wider sidebar**: Lets you make the sidebar much wider on themes that limit its width.
+- **Container line on the selected tab**: Fixes the selected tab missing its container's colored line in the Lepton, Photon and Protonfix designs.
+- **Stacks showing in two workspaces**: Fixes a stack showing up in two workspaces at once after one of its tabs was moved to another workspace or reopened. A tab moved to another workspace now leaves its stack, and stacks that are already split become a separate stack in each workspace.
+- **Reopened tabs go back to their workspace**: A closed tab you reopen goes back to the workspace and stack it was in, and takes you there.
+- **Archived workspaces keep their stacks**: Restoring an archived workspace brings back its stacks and tab groups just as they were, with its tabs in the same order.
+- **Moved stacks keep their tab**: A stack moved to another window opens on the tab you were using in it.
 
 ### Stack Improvements (on by default)
 
 Make stacks and the tabs inside them look and behave like normal tabs.
 
-- **Containers**: Stack tabs in a container show the container's colored line, like normal tabs. A stack or group tab opened in a new container tab stays in its stack or group, next to where it was.
-- **Audio button**: Stack tabs and stacks show the speaker button while playing sound. Click it to mute or unmute.
+- **Container tabs in stacks**: Stack tabs show their container's colored line, like normal tabs. Reopening a stack or group tab in another container, or opening a link from it in a private container, keeps the new tab in the same stack or group, next to the old one.
+- **Speaker button**: Stack tabs and stacks show a speaker button while they play sound. Click it to mute or unmute.
 - **Loading animation**: Stack tabs show the loading animation while their page loads.
-- **Normal tab buttons**: Stack tabs and stacks have their close button at the right end, keep their icon visible on hover, and use the normal pointer, like normal tabs.
+- **Close button on the right**: Stack tabs and stacks have their close button on the right and keep their icon when hovered, like normal tabs, and show the normal mouse pointer.
 - **Remember each stack's tab**: Clicking a stack opens the tab you last used in it, even after a restart.
-- **Stay in the stack when closing tabs**: Closing or unloading a tab, or moving it to another workspace, switches to the nearest loaded tab in the same stack or group, or among the normal tabs. If none is left there, it goes to the nearest one outside, and a stack opens on the tab you last used in it.
-  - *Go to the tab on the left* (on by default): Looks for the next tab on the left first. Turn off to look on the right first.
+- **Stay in the stack when closing tabs**: Closing or unloading a tab, or moving it to another workspace, takes you to the nearest loaded tab in the same stack or group, or among your normal tabs. If there isn't one, you go to the nearest tab outside it, and into a stack on the tab you last used there.
+  - *Go to the tab on the left* (on by default): Checks the tab on the left first. Turn off to check the right first.
 - **Middle-click for a new tab**: Middle-click empty space on the tab bar to open a new tab, or empty space in a stack to open one in that stack.
-- **Ctrl+T opens in the stack**: Ctrl+T and the new tab mouse gesture open the tab where you are: in the stack you're using, or with your normal tabs when you're not in one.
-  - *Also in tab groups* (on by default): The same for tab groups: in a tab group, Ctrl+T and the mouse gesture open the tab in that group.
-- **Bookmarks open in the stack**: Bookmarks and history entries opened in new tabs, including whole folders, go into the stack you're using.
+- **Ctrl+T opens in the stack**: Ctrl+T and the new tab mouse gesture open the new tab where you are: in the stack you're using, or with your normal tabs.
+  - *Also in tab groups* (on by default): In a tab group, Ctrl+T and the mouse gesture open the new tab in that group.
+- **Bookmarks open in the stack**: Bookmarks and history opened in new tabs, including whole folders, go into the stack you're using.
   - *Also in tab groups* (on by default): Bookmarks opened in new tabs also go into the tab group you're using.
-- **Stack + button beside the tabs**: A stack's + button sits right after its tabs, like on the main tab bar, and moves to the edge when the tabs don't fit.
-- **Container menu on the stack + button**: Right-click or hold a stack's + button to open a new tab in a container in that stack, like the main tab bar's + button. If containers are set to open on a left-click, a left-click works too.
+- **Stack + button next to the tabs**: A stack's + button sits right after its last tab, like on the main tab bar, and moves to the edge when the tabs don't fit.
+- **Container menu on the stack + button**: Right-click or hold a stack's + button to open a container tab in that stack, like the main + button. If you've set containers to open on a left-click, that works too.
 - **Middle-click the main + for a normal tab**: Middle-clicking the main tab bar's + button opens a normal tab at the end of the tab bar.
 - **Faster wheel scrolling**: Scrolling a stack's tabs with the mouse wheel is as fast and smooth as on the main tab bar.
 - **Auto-scroll while dragging**: A stack's tabs scroll when you drag something to their edge, like the main tab bar.
-  - *Hold the arrows to scroll* (on by default): Holding down a stack's scroll arrow keeps scrolling, like the main tab bar.
-- **Select several stack tabs**: Ctrl-click and Shift-click select several stack tabs at once. Dragging, the tab menu and anything else that works on selected tabs then applies to all of them.
-- **Add Tab to Group for stack tabs**: Stack tabs get the "Add Tab to Group" menu item, to move a tab straight into another stack or group. A new group made from a stack tab appears right after its stack.
-- **Hover previews**: Hovering a stack tab shows the tab preview card, like normal tabs, and hovering a stack shows just its name.
+  - *Hold the arrows to scroll* (on by default): Holding down a stack's scroll arrow keeps it scrolling, like on the main tab bar.
+- **Select several stack tabs**: Ctrl-click and Shift-click to select several stack tabs. Dragging them, the tab menu and anything else that works on selected tabs then works on all of them.
+- **"Add Tab to Group" on stack tabs**: Stack tabs get the "Add Tab to Group" menu item, to move a tab into another stack or group. A new group made from a stack tab goes right after its stack.
+- **Hover previews**: Hovering a stack tab shows its preview card like a normal tab, and hovering a stack shows just its name.
 - **New tab animation**: New stack tabs grow open like normal tabs.
-- **Keep the current tab in view**: When a stack has more tabs than fit, they scroll to keep the tab you're on in view, including new tabs and the tab you land on after closing one, like the main tab bar.
+- **Keep the current tab in view**: In a stack with more tabs than fit, the tab you're on stays in view, including new tabs and the tab you go to after closing one, like on the main tab bar.
 
 ### Stack Features (off by default)
 
 Optional changes to how stacks behave.
 
-- **Auto-title stacks**: Unnamed stacks show the title of the tab you're using in them, and new stacks skip the naming popup. Naming a stack shows its name again; clearing the name brings the title back.
-  - *Show the tab's icon* (on by default): Also shows that tab's icon, and its loading animation, in place of the stack symbol.
-  - *Links from normal tabs make a stack* (off by default): Opening a link in a new tab from a normal tab turns that tab and the new one into a stack, titled after the tab you're using.
-  - *One-tab stacks become normal tabs* (off by default): When an auto-titled stack is down to one tab, the stack goes away and that tab stays in its place as a normal tab.
-- **Tab icons on named stacks**: Named stacks show the icon of the tab you're using in them, and its loading animation, in place of the stack symbol.
+- **Auto-title stacks**: Stacks without a name show the title of the tab you're using in them, and new stacks don't ask for a name. Name a stack to show its name instead; clear the name to get the title back.
+  - *Show the tab's icon* (on by default): Also shows that tab's icon, and its loading animation, instead of the stack symbol.
+  - *Links from normal tabs make a stack* (off by default): Opening a link in a new tab from a normal tab puts both tabs in a new stack, titled after the tab you're on.
+  - *One-tab stacks become normal tabs* (off by default): When an auto-titled stack is down to one tab, it turns back into a normal tab in the same place.
+- **Tab icons on named stacks**: Named stacks show the icon of the tab you're using in them, and its loading animation, instead of the stack symbol.
 - **Confirm closing stacks**: Asks before closing a stack or group with more than one tab.
-- **Unload Stack menu item**: Adds "Unload Stack" and "Unload Group" to a stack's or group's menu, to unload all its tabs.
-- **Move Stack to Another Workspace**: Adds "Move Stack to Another Workspace" and "Move Group to Another Workspace" to a stack's or group's menu, to send it with all its tabs to another workspace while you stay where you are.
-- **Keep stacks when their last tab closes**: Closing the last tab in a stack leaves a new tab page in it, so the stack stays.
+- **Unload a whole stack**: Adds "Unload Stack" (or "Unload Group") to a stack's or group's menu, to unload all of its tabs at once.
+- **Move stacks to another workspace**: Adds "Move Stack to Another Workspace" (or "Move Group to Another Workspace") to a stack's or group's menu, to send it with all its tabs to another workspace. You stay where you are.
+- **Keep stacks when their last tab closes**: Closing the last tab in a stack leaves a new tab in it, so the stack doesn't disappear.
 
 ### Appearance (off by default)
 
 Optional style changes.
 
-- **Theme-matched stack colors**: New stacks start white on dark themes and gray on light ones, and White is added to the colors for stacks and groups.
-- **Stacks look like normal tabs (Experimental)**: Stacks look exactly like normal tabs in whatever theme and design you use: the same shape, spacing, text, icon and close button, and the same hover and selected colors. They shrink down to your minimum tab width, like tabs. Only their colored outline and tab count set them apart.
-  - *Show the whole outline* (on by default): On themes where tabs run past the bottom of the tab bar, stacks end at its edge so their outline shows all the way around.
-- **Stack tabs look like normal tabs (Experimental)**: Tabs in the stack bar look exactly like normal tabs in whatever theme and design you use: the same size, shape, spacing, text, icon, close button, separators and container line (with its animation), and the same hover and selected colors. They shrink down to your minimum tab width before the stack bar scrolls. The stack bar is as tall as the tab bar.
-- **Compact stacks**: Stacks take up less room than normal tabs, so more of them fit in the tab bar. A stack whose name doesn't fit grows to show it, up to a normal tab's width.
-  - *Full width for auto-titled stacks* (off by default): With Auto-title stacks on, auto-titled stacks are as wide as a normal tab, while named stacks stay compact.
-- **Full-width container lines**: A container tab's colored line spans the whole tab even when the tab isn't selected, on normal tabs and on stack tabs.
+- **Stack colors that match your theme**: New stacks start white on dark themes and gray on light ones. Also adds White to the colors you can pick for stacks and groups.
+- **Stacks look like normal tabs (Experimental)**: Stacks look just like normal tabs in your theme and design: the same shape, text, icon and close button, and the same colors when hovered or selected. They shrink to your minimum tab width, like tabs. Only their colored outline and tab count set them apart.
+  - *Show the whole outline* (on by default): On themes where tabs run past the bottom of the tab bar, stacks stop at its edge so their whole outline shows.
+- **Stack tabs look like normal tabs (Experimental)**: The tabs in a stack's bar look just like normal tabs in your theme and design: the same size, shape, text, icon, close button, separators and container line, and the same colors when hovered or selected. They shrink to your minimum tab width before the bar starts scrolling, and the bar is as tall as the tab bar.
+- **Compact stacks**: Stacks take less room than normal tabs, so more of them fit in the tab bar. A stack with a long name grows to show it, up to a normal tab's width.
+  - *Full width for auto-titled stacks* (off by default): When Auto-title stacks is on, auto-titled stacks are as wide as normal tabs, while named stacks stay compact.
+- **Full-width container lines**: A container tab's colored line goes all the way across the tab, even when it isn't selected. Stack tabs too.
 
 ### Browser (off by default)
 
 Improvements that aren't specific to stacks.
 
-- **Tab marks**: Adds "Mark Tab" to the tab menu to give tabs, including stack tabs, a colored border so they're easy to find. Works on several selected tabs, and marks are kept after a restart.
+- **Tab marks**: Adds "Mark Tab" to the tab menu to give tabs a colored border so they're easy to spot. Works on stack tabs and on several selected tabs at once, and marks stay after a restart.
   - *Ask before closing marked tabs* (off by default): Asks before closing a marked tab. When closing several tabs at once, you can keep the marked ones and close the rest.
-- **Scroll to switch workspaces**: Scroll the mouse wheel over the Workspaces button to switch workspaces, stopping at the first and last.
-- **One Floorp Hub and Settings tab**: Floorp Hub and Settings each open in only one tab, with the normal tabs; opening them again switches to that tab.
+- **Scroll to switch workspaces**: Scroll the mouse wheel over the Workspaces button to switch workspaces. It stops at the first and last one.
+- **Share workspaces between windows**: Every window can open every workspace, and each workspace's tabs stay together in one window. Switching to a workspace another window is showing swaps the two windows' workspaces. Switching to one that isn't open anywhere brings its tabs to this window. A tab moved to a workspace goes to the window showing it. Closing a window keeps its tabs, so you can switch back to them from another window. A new window opens on an empty workspace, and one made just for it is removed if you leave it unused. Turning this on gathers each workspace's tabs into one window.
+- **Only one Floorp Hub and Settings tab**: Floorp Hub and Settings each open in just one tab, among your normal tabs. Opening them again switches to that tab.
 
 # Using it
 
