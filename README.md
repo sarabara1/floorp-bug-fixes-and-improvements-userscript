@@ -17,6 +17,7 @@ Fixes for bugs in Floorp's tab stacks, tab bar, workspaces and sidebar.
 - **Missing close buttons**: Fixes normal tabs losing their close buttons when the first thing in the tab bar is a stack.
 - **Empty tab menu**: Fixes the tab menu showing only icons, with no text, when the browser starts on a stack tab.
 - **Stacks in new windows**: Fixes stacks sometimes turning into plain tab groups in new windows.
+- **Missing workspaces button**: Fixes the workspaces button coming up blank, with no name, icon or menu, in a window that reopens when the browser starts. The workspace options in the tab and link menus come back in that window too.
 - **Wider sidebar**: Lets you make the sidebar much wider on themes that limit its width.
 - **Container line on the selected tab**: Fixes the selected tab missing its container's colored line in the Lepton, Photon and Protonfix designs.
 - **Stacks showing in two workspaces**: Fixes a stack showing up in two workspaces at once after one of its tabs was moved to another workspace or reopened. A tab moved to another workspace now leaves its stack, and stacks that are already split become a separate stack in each workspace.
