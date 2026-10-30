@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.5.3
+// @version        1.5.4
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -2215,6 +2215,30 @@
       };
       ctx.listen(window, "mousemove", endIfNoSession, true);
       ctx.listen(window, "mousedown", endIfNoSession, true);
+    },
+  });
+
+  defineFeature({
+    id: "stack-drag-slide",
+    parent: "drag-and-drop",
+    name: "Stacks slide out of the way",
+    description: "When you drag something past a stack or a group's name, it slides aside smoothly, like tabs do, instead of jumping.",
+    default: true,
+    init(ctx) {
+      // Firefox slides the items a drag passes (tabs.css: the label container
+      // gets --tab-dragover-transition while #tabbrowser-tabs[movingtab]).
+      // Lepton's stylesheet (Lepton, Photon, Protonfix) replaces it with
+      // `vbox { transition: background-color 1s !important }`, and the label
+      // container is a vbox, so chips jumped there. Tabs aren't vboxes. The
+      // dragged chip itself ([dragtarget], or :active under the pointer) must
+      // follow the pointer without a transition.
+      ctx.style(`
+        @media (prefers-reduced-motion: no-preference) {
+          #tabbrowser-tabs[movingtab] tab-group > .tab-group-label-container:not(:active, [dragtarget]) {
+            transition: var(--tab-dragover-transition, transform 200ms ease) !important;
+          }
+        }
+      `);
     },
   });
 
