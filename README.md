@@ -62,6 +62,7 @@ Optional changes to how stacks behave.
   - *Show the tab's icon* (on by default): Also shows that tab's icon, and its loading animation, instead of the stack symbol.
   - *Links from normal tabs make a stack* (off by default): Opening a link in a new tab from a normal tab puts both tabs in a new stack, titled after the tab you're on.
   - *One-tab stacks become normal tabs* (off by default): When an auto-titled stack is down to one tab, it turns back into a normal tab in the same place.
+- **Double-click a tab to make a stack**: Double-clicking a normal tab turns it into a stack, just like "Add Tab to New Group". With Auto-title stacks on, it shows the tab's title. Otherwise you pick its name and color. If you've set Floorp to close tabs with a double-click, double-clicking keeps doing that instead.
 - **Tab icons on named stacks**: Named stacks show the icon of the tab you're using in them, and its loading animation, instead of the stack symbol.
 - **Confirm closing stacks**: Asks before closing a stack or group with more than one tab.
 - **Unload a whole stack**: Adds "Unload Stack" (or "Unload Group") to a stack's or group's menu, to unload all of its tabs at once.
