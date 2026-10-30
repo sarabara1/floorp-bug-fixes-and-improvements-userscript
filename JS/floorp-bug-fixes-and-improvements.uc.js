@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.5.1
+// @version        1.5.3
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -937,6 +937,13 @@
         group.getAttribute("data-floorp-stack") !== "false";
     },
 
+    // Element tests Firefox had on gBrowser until 159, where they became static
+    // on its Tabbrowser class; the same checks, so they work on either.
+    isTab: (el) => el?.tagName == "tab",
+    isTabGroup: (el) => el?.tagName == "tab-group",
+    isTabGroupLabel: (el) => !!el?.classList?.contains("tab-group-label"),
+    isSplitViewWrapper: (el) => el?.tagName == "tab-split-view-wrapper",
+
     // The stack a real tab is in, or null (plain groups don't count).
     stackOf(tab) {
       const group = tab?.closest?.("tab-group[data-floorp-stack]");
@@ -1340,6 +1347,20 @@
       } catch (e) {
         return false;
       }
+    },
+
+    // The URL of one of Floorp's feature modules ("tab-stacks", "workspaces").
+    // Floorp's bundle numbers its chunks, and the numbers change between
+    // versions; core.js's module map gives the current one. Importing it from
+    // a window gives that window's own instance, the one Floorp is running.
+    async floorpModuleURL(name) {
+      const CORE_URL = "chrome://noraneko/content/core.js";
+      const core = await (await fetch(CORE_URL)).text();
+      const key = `"./${name}/index.ts"`.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&");
+      const match = core.match(new RegExp(
+        key + String.raw`:\s*\(\)\s*=>\s*__vitePreload\(\(\)\s*=>\s*import\((['"])([^'"]+)\1\)`
+      ));
+      return match ? new URL(match[2], CORE_URL).href : null;
     },
 
     // Floorp closing a workspace's tabs one by one because the workspace is
@@ -1825,7 +1846,7 @@
       let unanimated = false; // inside the engine's handling of an unanimated drag
 
       const isStackMember = (el) =>
-        (gBrowser.isTab(el) || gBrowser.isSplitViewWrapper?.(el)) && isStack(el.group);
+        (U.isTab(el) || U.isSplitViewWrapper(el)) && isStack(el.group);
 
       function activate(item) {
         settleGen++;
@@ -1876,7 +1897,7 @@
         const items = [];
         for (const el of base) {
           if (!keep.has(el)) {
-            if (gBrowser.isTabGroupLabel(el)) {
+            if (U.isTabGroupLabel(el)) {
               if (el.group?.style.display === "none") continue; // other workspace
             } else if (isStack(el.group)) {
               continue;
@@ -1959,7 +1980,7 @@
         let nearest = null;
         let best = Infinity;
         for (const el of tabs.dragAndDropElements) {
-          const box = gBrowser.isTabGroupLabel(el) ? el.closest(".tab-group-label-container") : el;
+          const box = U.isTabGroupLabel(el) ? el.closest(".tab-group-label-container") : el;
           const r = box?.getBoundingClientRect();
           if (!r?.width) continue;
           const d = event.clientX < r.left ? r.left - event.clientX
@@ -1984,7 +2005,7 @@
       let externalAt = 0;
       function trackExternal(event) {
         const src = foreignSource(event);
-        const kind = src ? (gBrowser.isTabGroupLabel(src) ? "group" : "join")
+        const kind = src ? (U.isTabGroupLabel(src) ? "group" : "join")
           : !tabs.verticalMode && isExternalLinkDrop(event) ? "join" : null;
         if (!kind) {
           if (tabs.hasAttribute(EXTERNAL_ATTR)) tabs.removeAttribute(EXTERNAL_ATTR);
@@ -2088,7 +2109,7 @@
         }
         if (!tab._dragData) {
           endDrag();
-        } else if (gBrowser.isTabGroupLabel(tab) && isStack(tab.group)) {
+        } else if (U.isTabGroupLabel(tab) && isStack(tab.group)) {
           // The stack already looks collapsed, and Floorp's re-expand would
           // flip it back on every dragover.
           tab._dragData.expandGroupOnDrop = false;
@@ -2670,25 +2691,14 @@
       // once the chrome is ready, and makes a second start a no-op.
       const STACKS_PREF = "floorp.tabstacks.enabled";
       const STACKS_MARKER = "floorp-stack-kind-menu";
-      const CORE_URL = "chrome://noraneko/content/core.js";
       const stacksRunning = () => !!document.getElementById(STACKS_MARKER);
-
-      // Floorp's bundle numbers its chunks, and the numbers change between
-      // versions; core.js's module map gives the current one.
-      async function tabStacksModuleURL() {
-        const core = await (await fetch(CORE_URL)).text();
-        const match = core.match(
-          /"\.\/tab-stacks\/index\.ts":\s*\(\)\s*=>\s*__vitePreload\(\(\)\s*=>\s*import\((['"])([^'"]+)\1\)/
-        );
-        return match ? new URL(match[2], CORE_URL).href : null;
-      }
 
       async function ensureTabStacks() {
         if (!U.prefBool(STACKS_PREF, false)) return;
         await SessionStore.promiseInitialized; // Floorp waits for this too
         if (!ctx.alive) return;
 
-        const url = await tabStacksModuleURL();
+        const url = await U.floorpModuleURL("tab-stacks");
         if (!ctx.alive) return;
         if (!url) throw new Unavailable("couldn't find Floorp's tab stacks module in core.js");
         const mod = await import(url);
@@ -2710,6 +2720,65 @@
       }
 
       ctx.async(ensureTabStacks(), "starting tab stacks");
+    },
+  });
+
+  defineFeature({
+    id: "workspaces-in-restored-windows",
+    category: "fixes",
+    name: "Missing workspaces button",
+    description: "Fixes the workspaces button coming up blank, with no name, icon or menu, in a window that reopens when the browser starts. The workspace options in the tab and link menus come back in that window too.",
+    default: true,
+    init(ctx) {
+      // Floorp sets up a window's workspaces in one go: the service (which
+      // makes workspacesFuncs), then workspace sync, then the toolbar button,
+      // its menu and the context menus. In a window session restore opens
+      // after the first, this can run before the window's gBrowser exists:
+      // sync throws, and nothing after it is made. This runs Floorp's set-up
+      // again once the window is ready, after detaching what the first run
+      // left listening. The workspace list and the current workspace live in
+      // Floorp's module, so both runs share them.
+      const PANEL_ID = "workspacesToolbarButtonPanel";
+      const sleep = (ms) => new Promise(r => ctx.timeout(r, ms));
+      const workspacesClass = (mod) => [mod?.default, ...Object.values(mod ?? {}).flatMap(v => [v, v?.default])]
+        .find(v => typeof v?.getCtx === "function" && v.windowWorkspacesMap);
+
+      async function repair() {
+        await SessionStore.promiseAllWindowsRestored;
+        // Floorp's own set-up waits for session init and a file check first.
+        for (let i = 0; i < 20 && ctx.alive && typeof window.workspacesFuncs?.changeWorkspace !== "function"; i++) {
+          await sleep(250);
+        }
+        await sleep(1000);
+        if (!ctx.alive || !U.workspacesOn() || document.getElementById(PANEL_ID)) return;
+
+        const url = await U.floorpModuleURL("workspaces");
+        if (!ctx.alive) return;
+        if (!url) throw new Unavailable("couldn't find Floorp's workspaces module in core.js");
+        const Workspaces = workspacesClass(await import(url));
+        if (!ctx.alive) return;
+        if (!Workspaces || typeof Workspaces.prototype.init !== "function") {
+          throw new Unavailable("Floorp's workspaces module doesn't look as expected");
+        }
+        const half = Workspaces.getCtx(window);
+        // Only the failure described above: a service but no sync and no button.
+        if (!half || half.syncController || document.getElementById(PANEL_ID)) return;
+
+        console.warn(LOG, "Floorp's workspaces didn't finish starting in this window; starting them again");
+        // What the first run left listening, so the second doesn't double it.
+        half.tabManagerCtx?.cleanup?.();
+        try { if (half.listener) gBrowser.removeTabsProgressListener(half.listener); } catch (e) {}
+        if (half.boundHandleTabOpen) gBrowser.tabContainer.removeEventListener("TabOpen", half.boundHandleTabOpen);
+        // Other features hooked this object; its functions work on the same
+        // shared workspace state, so it's kept.
+        const funcs = window.workspacesFuncs;
+        Workspaces.prototype.init.call(Object.create(Workspaces.prototype));
+        for (let i = 0; i < 40 && Workspaces.getCtx(window) === half; i++) await sleep(50);
+        if (funcs) window.workspacesFuncs = funcs;
+        if (!document.getElementById(PANEL_ID)) ctx.warn("Floorp's workspaces button couldn't be set up again in this window.");
+      }
+
+      ctx.async(repair(), "setting up Floorp's workspaces again");
     },
   });
 
@@ -4790,7 +4859,7 @@
       let placeAfter = null;
       function elementAfter(group) {
         for (let n = group.nextElementSibling; n; n = n.nextElementSibling) {
-          if (gBrowser.isTab?.(n) || gBrowser.isTabGroup?.(n) || gBrowser.isSplitViewWrapper?.(n)) return n;
+          if (U.isTab(n) || U.isTabGroup(n) || U.isSplitViewWrapper(n)) return n;
         }
         return null;
       }
