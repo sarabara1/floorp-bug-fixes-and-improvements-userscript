@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.5.4
+// @version        1.5.5
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -5670,6 +5670,46 @@
       ctx.listen(gBrowser.tabContainer, "TabClose", (e) => leaving(e.target, e.target.group));
       // Dispatched on the group, with the tab as detail.
       ctx.listen(gBrowser.tabContainer, "TabUngrouped", (e) => leaving(e.detail, e.target));
+    },
+  });
+
+  defineFeature({
+    id: "double-click-makes-stack",
+    category: "stack-features",
+    name: "Double-click a tab to make a stack",
+    description: "Double-clicking a normal tab turns it into a stack, just like \"Add Tab to New Group\". With Auto-title stacks on, it shows the tab's title. Otherwise you pick its name and color. If you've set Floorp to close tabs with a double-click, double-clicking keeps doing that instead.",
+    default: false,
+    init(ctx) {
+      // Runs the tab menu's own "Add Tab to New Group" (or "Add Split View to
+      // New Group") for the tab, so Firefox opens its create panel and
+      // Auto-title skips it for stacks. Floorp's design setting "close tabs
+      // by double-clicking" writes browser.tabs.closeTabByDblclick; while
+      // it's on, double-clicks are left to Firefox.
+      const CLOSE_PREF = "browser.tabs.closeTabByDblclick";
+      const menu = ctx.require(window.TabContextMenu, "TabContextMenu");
+      ctx.require(typeof menu.moveTabsToNewGroup === "function", "TabContextMenu.moveTabsToNewGroup");
+      // The tab's own buttons (close, sound, Floorp's reload glyph).
+      const BUTTONS = ".tab-close-button, .tab-icon-overlay, .tab-audio-button, button, toolbarbutton, [role=button]";
+
+      ctx.listen(gBrowser.tabContainer, "dblclick", (e) => {
+        if (e.button !== 0 || e.shiftKey || e.altKey || e.getModifierState("Accel")) return;
+        if (U.prefBool(CLOSE_PREF, false)) return;
+        const tab = e.target.closest?.(".tabbrowser-tab");
+        if (!U.isTab(tab) || tab.pinned || tab.group || tab.closing || tab.hidden) return;
+        if (e.target.closest(BUTTONS)) return;
+        const run = tab.splitview && typeof menu.moveSplitViewToNewGroup === "function"
+          ? "moveSplitViewToNewGroup" : "moveTabsToNewGroup";
+        const { contextTab, contextTabs } = menu;
+        menu.contextTab = tab;
+        menu.contextTabs = [tab];
+        try {
+          menu[run]();
+        } finally {
+          menu.contextTab = contextTab;
+          menu.contextTabs = contextTabs;
+        }
+        e.preventDefault();
+      });
     },
   });
 
