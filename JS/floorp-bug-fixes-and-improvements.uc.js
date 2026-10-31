@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.5.5
+// @version        1.5.6
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -5646,20 +5646,13 @@
       // for drags out, workspace and window moves) and one tab is left, the
       // stack is ungrouped a tick later, once the other tab is gone.
       // group.ungroupTabs() leaves that tab where the stack was. A stack that
-      // starts with one tab stays until it has had more. So does one whose
-      // remaining tab was opened in the same go: Keep stacks when their last
-      // tab closes adds a new tab just before closing a stack's last one.
-      const justOpened = new WeakSet();
-      ctx.listen(gBrowser.tabContainer, "TabOpen", (e) => {
-        justOpened.add(e.target);
-        ctx.timeout(() => justOpened.delete(e.target));
-      });
+      // starts with one tab stays until it has had more.
       const autoTitled = (group) => !!group?.querySelector?.(".tab-group-label[uc-auto-title]");
 
       function leaving(tab, group) {
         if (!U.isStack(group) || !autoTitled(group)) return;
         const rest = group.tabs.filter(t => t !== tab && !t.closing);
-        if (rest.length !== 1 || justOpened.has(rest[0])) return;
+        if (rest.length !== 1) return;
         const [last] = rest;
         ctx.timeout(() => {
           // Gone (the whole stack moved or closed), refilled, or named since.
@@ -5944,7 +5937,7 @@
     id: "keep-stack-on-last-close",
     category: "stack-features",
     name: "Keep stacks when their last tab closes",
-    description: "Closing the last tab in a stack leaves a new tab in it, so the stack doesn't disappear.",
+    description: "Closing the last tab in a stack leaves a new tab in it, so the stack doesn't disappear. If One-tab stacks become normal tabs is on, auto-titled stacks close with their last tab.",
     default: false,
     standalone: ["stacktab-close-last-becomes-newtab.uc.js"],
     init(ctx) {
@@ -5973,6 +5966,10 @@
           : gBrowser.tabs.filter(t => t.closest?.("tab-group[data-floorp-stack]") === group);
         return members.filter(t => t !== tab && !t.closing).length === 0;
       }
+      // With One-tab stacks become normal tabs, an auto-titled stack would
+      // dissolve around the new tab, so it closes with its tab instead.
+      const dissolves = (group) => ctx.isActive("single-tab-unstack") &&
+        !!group.querySelector(".tab-group-label[uc-auto-title]");
 
       function placeReplacement(tab, group) {
         const wasSelected = gBrowser.selectedTab === tab;
@@ -5997,7 +5994,7 @@
       ctx.hook(gBrowser, "removeTab", function (next, tab, ...rest) {
         if (tab && !tab.pinned && !tab.closing && !inBulkClose()) {
           const group = U.stackOf(tab);
-          if (group && isLastInStack(tab, group)) {
+          if (group && isLastInStack(tab, group) && !dissolves(group)) {
             try {
               placeReplacement(tab, group);
             } catch (e) {
