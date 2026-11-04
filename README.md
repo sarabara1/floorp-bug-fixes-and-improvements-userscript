@@ -21,6 +21,7 @@ Fixes for bugs in Floorp's tab stacks, tab bar, workspaces and sidebar.
 - **Missing workspaces button**: Fixes the workspaces button coming up blank, with no name, icon or menu, in a window that reopens when the browser starts. The workspace options in the tab and link menus come back in that window too.
 - **Wider sidebar**: Lets you make the sidebar much wider on themes that limit its width.
 - **Container line on the selected tab**: Fixes the selected tab missing its container's colored line in the Lepton, Photon and Protonfix designs.
+- **Private Container leaves no trace**: Closing your last Private Container tab, or the browser, deletes everything those tabs left behind right away: cookies, site data, cached files, permissions you gave sites, and their entries in the Downloads list. Nothing from them goes into your history, search history or closed tabs, in any window. Sites stay signed in while any Private Container tab is still open.
 - **Stacks showing in two workspaces**: Fixes a stack showing up in two workspaces at once after one of its tabs was moved to another workspace or reopened. A tab moved to another workspace now leaves its stack, and stacks that are already split become a separate stack in each workspace.
 - **Reopened tabs go back to their workspace**: A closed tab you reopen goes back to the workspace and stack it was in, and takes you there.
 - **Archived workspaces keep their stacks**: Restoring an archived workspace brings back its stacks and tab groups just as they were, with its tabs in the same order.
