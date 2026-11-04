@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.5.6
+// @version        1.5.7
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -2843,6 +2843,364 @@
           --tab-inner-inline-margin: var(--tab-margin-inline-inner, 8px);
         }
       `);
+    },
+  });
+
+  // What Private Container tabs share across windows: one per browser
+  // session, not one per window. It decides when the container's data is
+  // wiped (only with none of its tabs open anywhere) and stops the writes
+  // that know nothing about containers. Those are all objects every window
+  // uses, and a wrapper made in a window would stop working when that window
+  // closes, so this runs in a sandbox of its own: makePrivateGuard is only
+  // ever evaluated there, so it can't use anything else from this file.
+  function makePrivateGuard() {
+    const load = url => ChromeUtils.importESModule(url);
+    const { ContextualIdentityService } = load("moz-src:///toolkit/components/contextualidentity/ContextualIdentityService.sys.mjs");
+    const { FormHistoryParent } = load("resource://gre/actors/FormHistoryParent.sys.mjs");
+    const { UrlbarUtils } = load("moz-src:///browser/components/urlbar/UrlbarUtils.sys.mjs");
+    const { Downloads } = load("resource://gre/modules/Downloads.sys.mjs");
+    const { DownloadHistory } = load("resource://gre/modules/DownloadHistory.sys.mjs");
+    const { AsyncShutdown } = load("resource://gre/modules/AsyncShutdown.sys.mjs");
+    const { setTimeout, clearTimeout } = load("resource://gre/modules/Timer.sys.mjs");
+
+    // A page that's closing can still write for a moment (a pagehide handler,
+    // a response on its way), so a second wipe follows the first.
+    const SWEEP_MS = 1500;
+    const SHUTDOWN_LIMIT_MS = 10000;
+    const MEMORY_CACHES = Ci.nsIClearDataService.CLEAR_IMAGE_CACHE |
+      Ci.nsIClearDataService.CLEAR_CSS_CACHE |
+      Ci.nsIClearDataService.CLEAR_JS_CACHE |
+      Ci.nsIClearDataService.CLEAR_TLS_TOKEN_CACHE;
+
+    const clearData = Services.clearData.wrappedJSObject;
+    const clearPattern = clearData.deleteDataFromOriginAttributesPattern;
+    const report = (e) => Components.utils.reportError(e);
+    const undo = [];
+    let used = false; // a private tab has been open since the last wipe
+    let usedThisSession = false;
+    let running = Promise.resolve();
+    let sweep = null;
+    const grants = []; // site permissions added from a private tab
+
+    const privateId = () => ContextualIdentityService.getPublicIdentities()
+      .find(identity => identity.floorpPrivateContainer === true)?.userContextId ?? null;
+    const isPrivate = (userContextId) => userContextId != null && userContextId === privateId();
+
+    // closingWindow: on its way out, and may still be listed.
+    function isOpen(closingWindow) {
+      const id = privateId();
+      if (id == null) return false;
+      for (const win of Services.wm.getEnumerator("navigator:browser")) {
+        if (win === closingWindow || win.closed) continue;
+        for (const tab of win.gBrowser?.tabs ?? []) {
+          if (tab.userContextId === id && !tab.closing) return true;
+        }
+      }
+      return false;
+    }
+
+    // A search happens in the window you're using, on the tab you're on.
+    function onPrivateTab() {
+      const win = Services.wm.getMostRecentWindow("navigator:browser");
+      return isPrivate(win?.gBrowser?.selectedTab?.userContextId);
+    }
+
+    // Firefox keeps site permissions for all containers together, so the
+    // container's wipe can't see them. Only a new one counts: a permission
+    // the site already had isn't this tab's to take away.
+    function notePermission(permission) {
+      const win = Services.wm.getMostRecentWindow("navigator:browser");
+      const browser = win?.gBrowser?.selectedBrowser;
+      if (!isPrivate(win?.gBrowser?.selectedTab?.userContextId)) return;
+      const site = browser.contentPrincipal.baseDomain;
+      if (site && permission.QueryInterface(Ci.nsIPermission).principal.baseDomain === site) grants.push(permission);
+    }
+
+    function forgetPermissions() {
+      for (const permission of grants.splice(0)) {
+        try {
+          Services.perms.removePermission(permission);
+        } catch (e) {
+          report(e);
+        }
+      }
+    }
+
+    // The file stays; only the entry goes. A download that's still running
+    // is left for the next wipe.
+    async function forgetDownloads(userContextId) {
+      const list = await Downloads.getList(Downloads.PUBLIC);
+      for (const download of await list.getAll()) {
+        if (download.source.userContextId !== userContextId || !download.stopped) continue;
+        await list.remove(download);
+        await download.finalize(false);
+      }
+    }
+
+    // Firefox's wipe asks the cache to clear by container, but the entries
+    // stay and go on being served, with or without a partition key in the
+    // request. So they're found one by one.
+    function forgetCache(userContextId) {
+      return new Promise(resolve => {
+        const found = [];
+        Services.cache2.asyncVisitAllStorages({
+          QueryInterface: ChromeUtils.generateQI(["nsICacheStorageVisitor"]),
+          onCacheStorageInfo() {},
+          onCacheEntryInfo(uri, idEnhance, dataSize, altDataSize, fetchCount, lastModified, expiration, pinned, info) {
+            if (info?.originAttributes?.userContextId === userContextId) found.push({ uri, idEnhance, info });
+          },
+          onCacheEntryVisitCompleted() {
+            for (const { uri, idEnhance, info } of found) {
+              try {
+                Services.cache2.diskCacheStorage(info).asyncDoomURI(uri, idEnhance, null);
+                Services.cache2.memoryCacheStorage(info).asyncDoomURI(uri, idEnhance, null);
+              } catch (e) {
+                report(e);
+              }
+            }
+            resolve();
+          },
+        }, true);
+      });
+    }
+
+    function wipe() {
+      const userContextId = privateId();
+      if (userContextId == null) return running;
+      used = false;
+      const data = new Promise(resolve => {
+        clearPattern.call(clearData, { userContextId }, { onDataDeleted: resolve });
+      });
+      // In memory and not kept per container, so these go for every tab.
+      // Other tabs just fetch them again.
+      const caches = new Promise(resolve => {
+        clearData.deleteData(MEMORY_CACHES, { onDataDeleted: resolve });
+      });
+      forgetPermissions();
+      running = Promise.all([
+        data,
+        caches,
+        forgetCache(userContextId).catch(report),
+        forgetDownloads(userContextId).catch(report),
+      ]);
+      return running;
+    }
+
+    function check(closingWindow) {
+      if (!used || isOpen(closingWindow)) return;
+      wipe();
+      clearTimeout(sweep);
+      sweep = setTimeout(() => {
+        if (!isOpen()) wipe();
+      }, SWEEP_MS);
+    }
+
+    // On quitting, whatever is left goes before the profile closes, rather
+    // than sitting on disk until Floorp's wipe at the next start. Pages are
+    // still open at this point, so a last pass waits until they've gone. By
+    // then cookies may already be closed, which is why this one runs too.
+    function quitting() {
+      clearTimeout(sweep);
+      if (!usedThisSession) return;
+      const first = used ? wipe() : running;
+      AsyncShutdown.profileBeforeChange.addBlocker("Floorp Bug Fixes & Improvements: Private Container", () => {
+        const limit = new Promise(resolve => setTimeout(resolve, SHUTDOWN_LIMIT_MS));
+        return Promise.race([first.then(wipe), limit]);
+      });
+    }
+
+    const TOPICS = ["domwindowclosed", "quit-application-granted", "perm-changed"];
+    const observer = {
+      observe(subject, topic, data) {
+        if (topic === "quit-application-granted") quitting();
+        else if (topic === "domwindowclosed") check(subject);
+        else if (data === "added") safely(() => notePermission(subject));
+      },
+    };
+
+    function wrap(target, name, make) {
+      const own = Object.getOwnPropertyDescriptor(target, name);
+      Object.defineProperty(target, name, {
+        value: make(target[name]),
+        writable: true,
+        configurable: true,
+      });
+      undo.push(() => {
+        if (own) Object.defineProperty(target, name, own);
+        else delete target[name];
+      });
+    }
+
+    // A wrong answer here must never cost a close or a save.
+    const safely = (test) => {
+      try {
+        return test();
+      } catch (e) {
+        report(e);
+        return false;
+      }
+    };
+
+    function removeWraps() {
+      for (const fn of undo.reverse()) fn();
+      undo.length = 0;
+    }
+
+    try {
+      // Floorp wipes when a window starts, and when a window has no private
+      // tab left, whatever the other windows have open.
+      wrap(clearData, "deleteDataFromOriginAttributesPattern", original => function (pattern, callback) {
+        const keep = safely(() => Object.keys(pattern).length === 1 && isPrivate(pattern.userContextId) && isOpen());
+        if (keep) {
+          callback?.onDataDeleted(0);
+          return 0;
+        }
+        return original.call(this, pattern, callback);
+      });
+      // Searches from the address bar and the search bar.
+      wrap(UrlbarUtils, "addToFormHistory", original => function (isPrivateWindow, value, source) {
+        return original.call(this, isPrivateWindow || safely(onPrivateTab), value, source);
+      });
+      wrap(UrlbarUtils, "addToInputHistory", original => function (url, input) {
+        return safely(onPrivateTab) ? Promise.resolve(false) : original.call(this, url, input);
+      });
+      // What's typed into forms on pages.
+      wrap(FormHistoryParent.prototype, "receiveMessage", original => function (message) {
+        const drop = message.name === "FormHistory:FormSubmitEntries" &&
+          safely(() => isPrivate(this.manager.documentPrincipal.originAttributes.userContextId));
+        return drop ? undefined : original.call(this, message);
+      });
+      for (const name of ["addDownloadToHistory", "updateMetaData"]) {
+        wrap(DownloadHistory, name, original => function (download) {
+          return safely(() => isPrivate(download.source.userContextId))
+            ? Promise.resolve()
+            : original.call(this, download);
+        });
+      }
+    } catch (e) {
+      removeWraps();
+      throw e;
+    }
+
+    for (const topic of TOPICS) Services.obs.addObserver(observer, topic);
+
+    return {
+      users: 0,
+      isPrivate,
+      noteUse() {
+        used = true;
+        usedThisSession = true;
+      },
+      check,
+      remove() {
+        clearTimeout(sweep);
+        for (const topic of TOPICS) Services.obs.removeObserver(observer, topic);
+        removeWraps();
+      },
+    };
+  }
+
+  const PrivateGuard = {
+    KEY: "__ucPrivateGuard",
+
+    // The clear-data service is a place every window can reach the guard
+    // through, even after the window that made it has closed.
+    join() {
+      const home = Services.clearData.wrappedJSObject;
+      if (!home[this.KEY]) {
+        const sandbox = Cu.Sandbox(Services.scriptSecurityManager.getSystemPrincipal(), {
+          sandboxName: "Floorp Bug Fixes & Improvements: Private Container",
+          wantGlobalProperties: ["ChromeUtils"],
+          wantXrays: false,
+        });
+        home[this.KEY] = Cu.evalInSandbox(`(${makePrivateGuard})()`, sandbox);
+      }
+      home[this.KEY].users++;
+      return home[this.KEY];
+    },
+
+    leave(guard, windowClosing) {
+      guard.users--;
+      // Closing the last window isn't turning the feature off: quitting
+      // comes after it.
+      if (guard.users > 0 || windowClosing) return;
+      guard.remove();
+      delete Services.clearData.wrappedJSObject[this.KEY];
+    },
+  };
+
+  defineFeature({
+    id: "private-container-cleanup",
+    category: "fixes",
+    name: "Private Container leaves no trace",
+    description: "Closing your last Private Container tab, or the browser, deletes everything those tabs left behind right away: cookies, site data, cached files, permissions you gave sites, and their entries in the Downloads list. Nothing from them goes into your history, search history or closed tabs, in any window. Sites stay signed in while any Private Container tab is still open.",
+    default: true,
+    init(ctx) {
+      // Floorp keeps a private tab out of history by marking it when it's
+      // created, and wipes from each window's TabClose. In a window session
+      // restore opens after the first, that set-up runs before gBrowser exists
+      // and gives up: the tabs there are saved like any others and nothing is
+      // wiped until the next start. This marks the tabs itself in every window.
+      const LINK_ITEM = "open_in_private_container";
+      const sleep = (ms) => new Promise(r => ctx.timeout(r, ms));
+      const tabs = gBrowser.tabContainer;
+
+      let guard;
+      try {
+        guard = PrivateGuard.join();
+      } catch (e) {
+        console.error(LOG, e);
+        throw new Unavailable(`Firefox's history or data clearing code has changed (${errorMessage(e)})`);
+      }
+      let windowClosing = false;
+      ctx.listen(window, "unload", () => {
+        windowClosing = true;
+      });
+      ctx.onCleanup(() => PrivateGuard.leave(guard, windowClosing));
+
+      function markBrowser(browser) {
+        browser.setAttribute("disableglobalhistory", "true");
+        browser.setAttribute("disablehistory", "true");
+      }
+
+      function markTab(tab) {
+        if (!guard.isPrivate(tab.userContextId)) return;
+        guard.noteUse();
+        // Session store leaves out tabs with this one.
+        tab.setAttribute("floorp-disablehistory", "true");
+        tab.setAttribute("historydisabled", "true");
+        const browser = tab.linkedBrowser;
+        if (!browser) return;
+        markBrowser(browser);
+        if (browser.browsingContext) browser.browsingContext.useGlobalHistory = false;
+      }
+
+      ctx.hook(gBrowser, "createBrowser", (next, ...args) => {
+        const browser = next(...args);
+        if (browser && guard.isPrivate(args[0]?.userContextId)) markBrowser(browser);
+        return browser;
+      });
+      ctx.listen(tabs, "TabOpen", (e) => markTab(e.target));
+      ctx.listen(tabs, "TabClose", (e) => {
+        // Moved to another window: it's still open, there.
+        if (e.detail?.adoptedBy || !guard.isPrivate(e.target.userContextId)) return;
+        guard.check();
+      });
+      for (const tab of gBrowser.tabs) markTab(tab);
+
+      // That same early exit also skips "Open in Private Container" on links.
+      async function finishFloorpSetup() {
+        await SessionStore.promiseAllWindowsRestored;
+        for (let i = 0; i < 20 && ctx.alive && !window.gFloorpPrivateContainer; i++) await sleep(250);
+        await sleep(1000);
+        if (!ctx.alive || document.getElementById(LINK_ITEM)) return;
+        const FloorpPrivateContainer = window.gFloorpPrivateContainer?.constructor;
+        if (typeof FloorpPrivateContainer?.openWithPrivateContainer !== "function") return;
+        console.warn(LOG, "Floorp's Private Container didn't finish starting in this window; starting it again");
+        window.gFloorpPrivateContainer = new FloorpPrivateContainer();
+        if (!document.getElementById(LINK_ITEM)) ctx.warn("\"Open in Private Container\" couldn't be added to the link menu in this window.");
+      }
+      ctx.async(finishFloorpSetup(), "setting up Floorp's Private Container again");
     },
   });
 
