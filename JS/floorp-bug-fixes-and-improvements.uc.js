@@ -2,7 +2,7 @@
 // @name           floorp-bug-fixes-and-improvements.uc.js
 // @description    Floorp Bug Fixes & Improvements: fixes for Floorp's bugs, tab stacks that work like normal tabs, and extra features, with a settings page
 // @include        main
-// @version        1.5.7
+// @version        1.5.8
 // ==/UserScript==
 
 // Fixes for bugs in Floorp, improvements that make its tab stacks look and
@@ -8813,7 +8813,9 @@
             if (own.includes(selected)) gBrowser.selectedTab = selected;
             if (made.length && own.length) for (const t of made) gBrowser.removeTab(t, { animate: false, skipSessionStore: true });
             window[READY] = true;
-            refresh(window);
+            // create() has switched already; an existing workspace hasn't. The
+            // selected tab is in it now, so Floorp stays on that tab.
+            window.workspacesFuncs.changeWorkspace(id);
           } else {
             // Turning this on with several windows open (or a session from
             // before): every workspace's tabs end up in one window, merged,
